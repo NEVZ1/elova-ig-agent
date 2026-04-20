@@ -12,6 +12,8 @@ def _to_async_db_url(url: str) -> str:
         return url
     if url.startswith("postgresql+psycopg://"):
         return "postgresql+asyncpg://" + url.split("://", 1)[1]
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql+asyncpg://" + url.split("://", 1)[1]
     if url.startswith("postgres://"):
         return "postgresql+asyncpg://" + url.split("://", 1)[1]
     if url.startswith("postgresql://"):
@@ -26,6 +28,8 @@ def _to_sync_db_url(url: str) -> str:
     if url.startswith("postgresql+psycopg://"):
         return url
     if url.startswith("postgresql+asyncpg://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    if url.startswith("postgresql+psycopg2://"):
         return "postgresql+psycopg://" + url.split("://", 1)[1]
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.split("://", 1)[1]
