@@ -21,6 +21,10 @@ def get_url() -> str:
         url = os.getenv("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL_SYNC (or DATABASE_URL) must be set for Alembic.")
+    # Alembic uses a sync SQLAlchemy engine. If an async URL was provided,
+    # transparently convert it to psycopg to avoid deployment-time failures.
+    if url.startswith("postgresql+asyncpg://"):
+        url = "postgresql+psycopg://" + url.split("://", 1)[1]
     return url
 
 
@@ -65,4 +69,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
