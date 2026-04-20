@@ -4,21 +4,22 @@
 
 Bu klasörü GitHub’a push et.
 
-## 2) Render Blueprint
+## 2) Render Blueprint (düşük maliyet)
 
 Render → **New** → **Blueprint** → repo’yu seç → `render.yaml` ile oluştur.
 
 Oluşacak servisler:
-- `elova-dm-api` (web)
-- `elova-dm-worker` (worker)
-- `elova-dm-beat` (beat)
-- `elova-dm-redis` (redis)
-- `elova-dm-postgres` (postgres)
+- `elova-dm-api` (web, free plan)
+- `elova-dm-worker` (worker, starter plan, `-B` ile beat dahil)
+
+Bu Blueprint, Render’ın managed Postgres/Redis’ini kurmaz (maliyet düşürmek için).
+Onun yerine dışarıdan sağlayacağın URL’leri env olarak girersin.
 
 ## 3) Secret env’ler
 
 Render’da aşağıdakileri gir:
-- `OPENAI_API_KEY`
+- `DATABASE_URL` (harici Postgres)
+- `REDIS_URL` (harici Redis; Celery broker + backend)
 - `GEMINI_API_KEY`
 - `ADMIN_API_KEY`
 - `IG_VERIFY_TOKEN`

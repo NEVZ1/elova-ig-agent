@@ -2,7 +2,7 @@ services:
   - type: web
     name: elova-dm-api
     runtime: python
-    plan: starter
+    plan: free
     repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
     buildCommand: pip install -r requirements.txt
@@ -15,14 +15,9 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: DATABASE_URL
-        fromDatabase:
-          name: elova-dm-postgres
-          property: connectionString
+        sync: false
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: elova-dm-redis
-          property: connectionString
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -57,21 +52,16 @@ services:
     repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.workers.celery_app.celery worker -l info
+    startCommand: celery -A app.workers.celery_app.celery worker -B -l info
     envVars:
       - key: ENV
         value: production
       - key: LOG_LEVEL
         value: INFO
       - key: DATABASE_URL
-        fromDatabase:
-          name: elova-dm-postgres
-          property: connectionString
+        sync: false
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: elova-dm-redis
-          property: connectionString
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -92,49 +82,3 @@ services:
         sync: false
       - key: BOOKING_URL
         sync: false
-
-  - type: worker
-    name: elova-dm-beat
-    runtime: python
-    plan: starter
-    repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
-    branch: main
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.workers.celery_app.celery beat -l info
-    envVars:
-      - key: ENV
-        value: production
-      - key: LOG_LEVEL
-        value: INFO
-      - key: DATABASE_URL
-        fromDatabase:
-          name: elova-dm-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: elova-dm-redis
-          property: connectionString
-      - key: LLM_PROVIDER
-        value: gemini
-      - key: LLM_UNIFIED_MODE
-        value: "true"
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.0-flash-lite
-      - key: IG_PAGE_ID
-        sync: false
-      - key: IG_PAGE_ACCESS_TOKEN
-        sync: false
-
-  - type: keyvalue
-    name: elova-dm-redis
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
-
-databases:
-  - name: elova-dm-postgres
-    plan: basic-256mb
-    ipAllowList: []

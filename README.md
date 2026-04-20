@@ -73,6 +73,7 @@ celery -A app.workers.celery_app.celery beat -l info
 - Admin auth uses `X-API-Key: $ADMIN_API_KEY`.
 - Default LLM is Gemini (cheap). Configure `LLM_PROVIDER=gemini` + `GEMINI_API_KEY`.
 - Cost-optimized mode is `LLM_UNIFIED_MODE=true` (single model call per inbound DM).
+- Render low-cost blueprint expects external `DATABASE_URL` and `REDIS_URL`.
 
 ## Deploy to Render (GitLab)
 
