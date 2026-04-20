@@ -82,6 +82,11 @@ class Settings(BaseSettings):
             self.database_url_sync = _to_sync_db_url(self.database_url)
         if self.database_url_sync and not self.database_url:
             self.database_url = _to_async_db_url(self.database_url_sync)
+        # Always normalize driver schemes to avoid psycopg2 defaulting.
+        if self.database_url:
+            self.database_url = _to_async_db_url(self.database_url)
+        if self.database_url_sync:
+            self.database_url_sync = _to_sync_db_url(self.database_url_sync)
 
         # Celery: allow using REDIS_URL if CELERY_* are not set.
         if not self.celery_broker_url:
