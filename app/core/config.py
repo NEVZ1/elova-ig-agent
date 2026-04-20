@@ -4,6 +4,36 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _to_async_db_url(url: str) -> str:
+    # Supports:
+    # - postgresql+psycopg://... -> postgresql+asyncpg://...
+    # - postgresql://... or postgres://... -> postgresql+asyncpg://...
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    if url.startswith("postgresql+psycopg://"):
+        return "postgresql+asyncpg://" + url.split("://", 1)[1]
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url.split("://", 1)[1]
+    if url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + url.split("://", 1)[1]
+    return url
+
+
+def _to_sync_db_url(url: str) -> str:
+    # Supports:
+    # - postgresql+asyncpg://... -> postgresql+psycopg://...
+    # - postgresql://... or postgres://... -> postgresql+psycopg://...
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    if url.startswith("postgresql+asyncpg://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    return url
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -58,33 +88,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
-def _to_async_db_url(url: str) -> str:
-    # Supports:
-    # - postgresql+psycopg://... -> postgresql+asyncpg://...
-    # - postgresql://... or postgres://... -> postgresql+asyncpg://...
-    if url.startswith("postgresql+asyncpg://"):
-        return url
-    if url.startswith("postgresql+psycopg://"):
-        return "postgresql+asyncpg://" + url.split("://", 1)[1]
-    if url.startswith("postgres://"):
-        return "postgresql+asyncpg://" + url.split("://", 1)[1]
-    if url.startswith("postgresql://"):
-        return "postgresql+asyncpg://" + url.split("://", 1)[1]
-    return url
-
-
-def _to_sync_db_url(url: str) -> str:
-    # Supports:
-    # - postgresql+asyncpg://... -> postgresql+psycopg://...
-    # - postgresql://... or postgres://... -> postgresql+psycopg://...
-    if url.startswith("postgresql+psycopg://"):
-        return url
-    if url.startswith("postgresql+asyncpg://"):
-        return "postgresql+psycopg://" + url.split("://", 1)[1]
-    if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url.split("://", 1)[1]
-    if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url.split("://", 1)[1]
-    return url
