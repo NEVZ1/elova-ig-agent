@@ -73,3 +73,7 @@ celery -A app.workers.celery_app.celery beat -l info
 - Admin auth uses `X-API-Key: $ADMIN_API_KEY`.
 - Default LLM is Gemini (cheap). Configure `LLM_PROVIDER=gemini` + `GEMINI_API_KEY`.
 - Cost-optimized mode is `LLM_UNIFIED_MODE=true` (single model call per inbound DM).
+
+## Deploy to Render (GitLab)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://gitlab.com/NEVZ1/elova-ig-agent/tree/main)
