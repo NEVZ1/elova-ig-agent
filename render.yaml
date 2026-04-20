@@ -126,7 +126,9 @@ services:
     name: elova-dm-redis
     plan: starter
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
 
 databases:
   - name: elova-dm-postgres
     plan: starter
+    ipAllowList: []
