@@ -13,14 +13,14 @@ from app.workers.tasks import process_incoming_dm
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
-@router.get("/instagram")
+@router.get("/instagram", response_class=PlainTextResponse)
 @limiter.limit("60/minute")
-async def instagram_webhook_verify(request: Request) -> PlainTextResponse:
+async def instagram_webhook_verify(request: Request):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
     if mode == "subscribe" and token and token == settings.ig_verify_token:
-        return PlainTextResponse(content=challenge or "", status_code=200)
+        return challenge or ""
     raise HTTPException(status_code=403, detail="forbidden")
 
 
