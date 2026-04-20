@@ -1,7 +1,7 @@
 services:
   - type: web
     name: elova-dm-api
-    env: python
+    runtime: python
     plan: starter
     repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
@@ -52,7 +52,7 @@ services:
 
   - type: worker
     name: elova-dm-worker
-    env: python
+    runtime: python
     plan: starter
     repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
@@ -95,7 +95,7 @@ services:
 
   - type: worker
     name: elova-dm-beat
-    env: python
+    runtime: python
     plan: starter
     repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
@@ -128,7 +128,7 @@ services:
       - key: IG_PAGE_ACCESS_TOKEN
         sync: false
 
-  - type: redis
+  - type: keyvalue
     name: elova-dm-redis
     plan: starter
     maxmemoryPolicy: allkeys-lru
@@ -136,5 +136,5 @@ services:
 
 databases:
   - name: elova-dm-postgres
-    plan: starter
+    plan: basic-256mb
     ipAllowList: []
