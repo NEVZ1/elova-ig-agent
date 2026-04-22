@@ -31,8 +31,13 @@ async def instagram_webhook_receive(
     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
 ) -> dict:
     raw_body = await request.body()
-    if settings.ig_app_secret:
-        if not verify_x_hub_signature_256(settings.ig_app_secret, raw_body, x_hub_signature_256):
+    if settings.ig_app_secret and settings.ig_require_signature:
+        ok = verify_x_hub_signature_256(settings.ig_app_secret, raw_body, x_hub_signature_256)
+        if not ok:
+            logger.warning(
+                "instagram_bad_signature",
+                signature_present=bool(x_hub_signature_256),
+            )
             raise HTTPException(status_code=401, detail="bad_signature")
     payload = await request.json()
     logger.info(

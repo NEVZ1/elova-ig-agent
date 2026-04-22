@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     ig_page_access_token: str = ""
     ig_page_id: str = ""
     ig_app_secret: str = ""
+    ig_require_signature: bool = True
 
     whatsapp_number: str = ""
     booking_url: str = ""
