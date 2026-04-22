@@ -17,6 +17,8 @@ Production-ready AI DM agent system for Elova Event Design (luxury event design)
 
 ## Quick start (local)
 
+Python requirement: use **Python 3.11–3.13**. Python **3.14 is not supported** by `pydantic-core`/`asyncpg` yet and will fail to install.
+
 1) Create env file:
 
 ```bash
@@ -32,7 +34,7 @@ docker compose up -d postgres redis
 3) Install deps:
 
 ```bash
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
