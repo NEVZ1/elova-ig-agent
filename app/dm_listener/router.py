@@ -35,7 +35,20 @@ async def instagram_webhook_receive(
         if not verify_x_hub_signature_256(settings.ig_app_secret, raw_body, x_hub_signature_256):
             raise HTTPException(status_code=401, detail="bad_signature")
     payload = await request.json()
+    logger.info(
+        "instagram_webhook_post",
+        object=payload.get("object"),
+        entry_count=len(payload.get("entry") or []),
+        top_keys=list(payload.keys())[:20],
+    )
     events = normalize_instagram_payload(payload)
+    if not events:
+        entry0 = (payload.get("entry") or [{}])[0] if isinstance(payload.get("entry"), list) else {}
+        logger.warning(
+            "instagram_webhook_no_events",
+            object=payload.get("object"),
+            entry0_keys=list(entry0.keys())[:30] if isinstance(entry0, dict) else None,
+        )
     for e in events:
         logger.info("dm_received", instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
         try:
