@@ -51,7 +51,9 @@ services:
     plan: starter
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.workers.celery_app.celery worker -B -l info --concurrency=1
+    # Explicitly pass broker/backend to avoid Render env var blank-values breaking Celery
+    # (e.g. CELERY_BROKER_URL="") which causes "No such transport: ".
+    startCommand: celery -A app.workers.celery_app.celery worker -B -l info --concurrency=1 -b "$REDIS_URL" --result-backend "$REDIS_URL"
     envVars:
       - key: ENV
         value: production
