@@ -73,7 +73,7 @@ celery -A app.workers.celery_app.celery beat -l info
 - Instagram Graph API setup is required (Page, App, permissions, webhook subscriptions).
 - The API abstraction is in `app/instagram/client.py` so you can swap Meta Graph API vs. future browser automation.
 - Admin auth uses `X-API-Key: $ADMIN_API_KEY`.
-- Default LLM is Gemini (cheap). Configure `LLM_PROVIDER=gemini` + `GEMINI_API_KEY`.
+- Default LLM is OpenAI. Configure `LLM_PROVIDER=openai` + `OPENAI_API_KEY` (or switch to Gemini with `LLM_PROVIDER=gemini` + `GEMINI_API_KEY`).
 - Cost-optimized mode is `LLM_UNIFIED_MODE=true` (single model call per inbound DM).
 - Render low-cost blueprint expects external `DATABASE_URL` and `REDIS_URL`.
 

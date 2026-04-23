@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
 
-    llm_provider: str = "gemini"
+    llm_provider: str = "openai"
     llm_unified_mode: bool = True
 
     gemini_api_key: str = ""
