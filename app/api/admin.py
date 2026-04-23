@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AdminAuth
+from app.core.config import settings
 from app.db.models import Lead, Message
 from app.db.session import get_async_session
 
@@ -100,3 +103,32 @@ async def get_lead_messages(
         for m in rows
     ]
 
+
+@router.get("/debug/config")
+async def debug_config() -> dict:
+    """
+    Debug endpoint (admin-protected) to verify which env vars the running service
+    actually sees in production. Never returns raw secrets.
+    """
+
+    def _hash8(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+    def _url_bits(value: str | None) -> dict:
+        if not value:
+            return {"present": False}
+        p = urlparse(value)
+        return {"present": True, "scheme": p.scheme, "host": p.hostname, "port": p.port}
+
+    verify_token = (settings.ig_verify_token or "").strip()
+    return {
+        "env": settings.env,
+        "ig_verify_token": {"present": bool(verify_token), "len": len(verify_token), "sha256_8": _hash8(verify_token) if verify_token else None},
+        "ig_app_secret_present": bool((settings.ig_app_secret or "").strip()),
+        "ig_require_signature": bool(settings.ig_require_signature),
+        "redis_url": _url_bits(settings.redis_url),
+        "celery_broker_url": _url_bits(settings.celery_broker_url),
+        "celery_result_backend": _url_bits(settings.celery_result_backend),
+        "database_url_present": bool((settings.database_url or "").strip()),
+        "database_url_sync_present": bool((settings.database_url_sync or "").strip()),
+    }
