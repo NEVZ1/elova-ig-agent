@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.responses import PlainTextResponse
 
@@ -14,7 +16,8 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
 @router.get("/instagram", response_class=PlainTextResponse)
-@limiter.limit("60/minute")
+# Verification endpoints can be hit multiple times during Meta setup.
+@limiter.limit("600/minute")
 async def instagram_webhook_verify(request: Request):
     # Meta sends hub.* keys. Some tooling / proxies may also include underscore variants.
     # Also handle duplicate query params by taking the first non-empty value.
@@ -35,7 +38,21 @@ async def instagram_webhook_verify(request: Request):
 
     if mode == "subscribe" and token:
         expected = (settings.ig_verify_token or "").strip()
-        if expected and token.strip() == expected:
+        if settings.ig_verify_bypass and challenge:
+            logger.warning("instagram_verify_bypass_enabled")
+            return challenge
+
+        match = bool(expected) and token.strip() == expected
+        logger.info(
+            "instagram_webhook_verify",
+            mode=mode,
+            token_len=len(token),
+            expected_len=len(expected),
+            token_sha8=hashlib.sha256(token.encode("utf-8")).hexdigest()[:8],
+            expected_sha8=hashlib.sha256(expected.encode("utf-8")).hexdigest()[:8] if expected else None,
+            match=match,
+        )
+        if match:
             return challenge or ""
     raise HTTPException(status_code=403, detail="forbidden")
 

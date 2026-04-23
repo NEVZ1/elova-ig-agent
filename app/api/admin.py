@@ -126,6 +126,7 @@ async def debug_config() -> dict:
         "ig_verify_token": {"present": bool(verify_token), "len": len(verify_token), "sha256_8": _hash8(verify_token) if verify_token else None},
         "ig_app_secret_present": bool((settings.ig_app_secret or "").strip()),
         "ig_require_signature": bool(settings.ig_require_signature),
+        "ig_verify_bypass": bool(settings.ig_verify_bypass),
         "redis_url": _url_bits(settings.redis_url),
         "celery_broker_url": _url_bits(settings.celery_broker_url),
         "celery_result_backend": _url_bits(settings.celery_result_backend),
