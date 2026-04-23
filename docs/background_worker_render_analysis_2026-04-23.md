@@ -275,3 +275,28 @@ veya follow-up için Render Cron Job kullan.
 - Render Celery quickstart: Celery worker için Redis/Key Value broker önerilir.
 - Render Blueprint spec: `type: worker`, `startCommand`, `plan`, `repo` davranışı.
 - Render Free docs: background worker free instance destekli servis tipleri arasında değildir.
+
+## 10. Ek teşhis — `db_unreachable` devam ederse
+
+2026-04-23 ek bulgu: lokal makinede mevcut Supabase direct host (`db.<project-ref>.supabase.co:5432`) ile `SELECT 1` başarılı oldu; fakat Render tarafında `/health/ready` hâlâ `{"detail":"db_unreachable"}` dönüyorsa en güçlü kök neden Render ↔ Supabase direct connection IPv6 uyumsuzluğudur.
+
+Supabase dokümanı direct connection string’in IPv6 kullandığını, IPv6 desteklemeyen platformlarda Supavisor pooler kullanılması gerektiğini belirtir. Aynı Supabase troubleshooting dokümanı IPv6 desteklemeyen örnek platformlar arasında Render’ı açıkça listeler.
+
+Render için önerilen `DATABASE_URL`:
+
+```text
+postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Önemli seçim:
+
+- Render web service + worker gibi sürekli çalışan servisler için **Session Pooler / port 5432** kullan.
+- Transaction Pooler / port 6543 serverless işlerde iyidir; ancak bazı Postgres client’larında prepared statement sorunları çıkarabilir. Bu projede en güvenli ilk tercih Session Pooler’dır.
+
+Yeni teşhis scripti:
+
+```bash
+python scripts/check_db_connection.py
+```
+
+Render Shell veya local ortamda gizli şifreleri yazdırmadan DB host/port/driver bilgisini ve `SELECT 1` sonucunu gösterir.

@@ -75,6 +75,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _normalize_urls(self) -> "Settings":
+        # Treat empty-string env vars as unset (Render UI may save blank values).
+        if isinstance(self.redis_url, str) and not self.redis_url.strip():
+            self.redis_url = "redis://localhost:6379/0"
+        if isinstance(self.celery_broker_url, str) and not self.celery_broker_url.strip():
+            self.celery_broker_url = None
+        if isinstance(self.celery_result_backend, str) and not self.celery_result_backend.strip():
+            self.celery_result_backend = None
+
         # DB: allow providing only one URL (Render typically provides DATABASE_URL).
         if not self.database_url and not self.database_url_sync:
             raise ValueError("DATABASE_URL (async) or DATABASE_URL_SYNC (sync) must be set.")

@@ -29,6 +29,19 @@ Render’da aşağıdakileri gir:
 - `WHATSAPP_NUMBER`
 - `BOOKING_URL`
 
+### Supabase + Render notu
+
+Supabase kullanıyorsan Render’da `db.<project-ref>.supabase.co:5432` **direct connection** yerine
+Supabase Dashboard → **Connect** → **Session pooler** bağlantısını kullan:
+
+```text
+postgresql://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Sebep: Supabase direct connection IPv6 kullanır; Render IPv6 desteklemediği için `/health/ready`
+`{"detail":"db_unreachable"}` dönebilir. Web service ve worker gibi sürekli çalışan servisler için
+ilk tercih **Session pooler / port 5432** olmalı.
+
 ## 4) Meta webhook
 
 Webhook URL:
