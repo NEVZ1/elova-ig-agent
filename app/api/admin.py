@@ -5,11 +5,13 @@ import uuid
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+from redis import Redis
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AdminAuth
 from app.core.config import settings
+from app.workers.celery_app import celery
 from app.db.models import Lead, Message
 from app.db.session import get_async_session
 
@@ -132,4 +134,47 @@ async def debug_config() -> dict:
         "celery_result_backend": _url_bits(settings.celery_result_backend),
         "database_url_present": bool((settings.database_url or "").strip()),
         "database_url_sync_present": bool((settings.database_url_sync or "").strip()),
+    }
+
+
+@router.get("/debug/queue")
+async def debug_queue() -> dict:
+    """
+    Debug endpoint (admin-protected) to confirm that:
+    - web and worker point at the same Redis broker
+    - messages are being enqueued to the default `celery` list
+    """
+
+    def _url_bits(value: str | None) -> dict:
+        if not value:
+            return {"present": False}
+        p = urlparse(value)
+        db = None
+        if p.path and p.path != "/":
+            try:
+                db = int(p.path.lstrip("/"))
+            except Exception:  # noqa: BLE001
+                db = p.path
+        return {"present": True, "scheme": p.scheme, "host": p.hostname, "port": p.port, "db": db}
+
+    broker = settings.celery_broker_url or ""
+    backend = settings.celery_result_backend or ""
+    redis_url = settings.redis_url or ""
+
+    r = Redis.from_url(redis_url)  # type: ignore[arg-type]
+    queue_len = int(r.llen("celery"))
+
+    return {
+        "settings": {
+            "redis_url": _url_bits(redis_url),
+            "celery_broker_url": _url_bits(broker),
+            "celery_result_backend": _url_bits(backend),
+        },
+        "celery_conf": {
+            "broker_url": _url_bits(celery.conf.broker_url),
+            "result_backend": _url_bits(celery.conf.result_backend),
+        },
+        "redis_probe": {
+            "celery_list_len": queue_len,
+        },
     }

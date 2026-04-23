@@ -90,7 +90,8 @@ async def instagram_webhook_receive(
     for e in events:
         logger.info("dm_received", instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
         try:
-            process_incoming_dm.delay(e.model_dump())
+            res = process_incoming_dm.delay(e.model_dump())
+            logger.info("queue_publish_ok", task_id=res.id)
         except Exception as exc:  # noqa: BLE001
             logger.error("queue_publish_failed", err=str(exc))
     return {"ok": True, "accepted": len(events)}
