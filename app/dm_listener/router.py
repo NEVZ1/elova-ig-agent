@@ -16,11 +16,27 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 @router.get("/instagram", response_class=PlainTextResponse)
 @limiter.limit("60/minute")
 async def instagram_webhook_verify(request: Request):
-    mode = request.query_params.get("hub.mode")
-    token = request.query_params.get("hub.verify_token")
-    challenge = request.query_params.get("hub.challenge")
-    if mode == "subscribe" and token and token == settings.ig_verify_token:
-        return challenge or ""
+    # Meta sends hub.* keys. Some tooling / proxies may also include underscore variants.
+    # Also handle duplicate query params by taking the first non-empty value.
+    def _first_non_empty(*keys: str) -> str | None:
+        for k in keys:
+            try:
+                values = request.query_params.getlist(k)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                values = [request.query_params.get(k)]
+            for v in values:
+                if v is not None and str(v).strip():
+                    return str(v).strip()
+        return None
+
+    mode = _first_non_empty("hub.mode", "hub_mode")
+    token = _first_non_empty("hub.verify_token", "hub_verify_token")
+    challenge = _first_non_empty("hub.challenge", "hub_challenge")
+
+    if mode == "subscribe" and token:
+        expected = (settings.ig_verify_token or "").strip()
+        if expected and token.strip() == expected:
+            return challenge or ""
     raise HTTPException(status_code=403, detail="forbidden")
 
 
