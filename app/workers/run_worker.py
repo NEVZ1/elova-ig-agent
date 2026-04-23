@@ -33,15 +33,16 @@ def main() -> None:
     )
 
     # Render small instances (512MB) can OOM with prefork (default). Use solo pool.
+    # Also avoid running embedded Beat (-B) in the same process on tiny instances.
     args = sys.argv[1:] or [
         "worker",
-        "-B",
         "-l",
         "info",
         "--pool=solo",
         "--concurrency=1",
         "--without-gossip",
         "--without-mingle",
+        "--without-heartbeat",
     ]
     celery.worker_main(args)
 

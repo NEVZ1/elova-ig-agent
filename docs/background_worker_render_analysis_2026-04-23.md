@@ -300,3 +300,50 @@ python scripts/check_db_connection.py
 ```
 
 Render Shell veya local ortamda gizli şifreleri yazdırmadan DB host/port/driver bilgisini ve `SELECT 1` sonucunu gösterir.
+
+## 11. Yeni bulgu — Worker artık broker değil memory yüzünden düşüyor
+
+2026-04-23 tarihli yeni Render logu şunu gösteriyor:
+
+- broker çözülmüş (`transport: redis://...` görünüyor)
+- task'lar yüklenmiş
+- ama worker `concurrency: 16 (prefork)` ile başlıyor
+- sonra `Ran out of memory (used over 512MB)` ile instance restart oluyor
+
+Bu şu anlama gelir:
+
+1. `No such transport` problemi çözülmüş veya aşılıp Redis bağlantısı kurulmuş.
+2. Yeni ana problem Render starter instance üzerinde Celery'nin varsayılan prefork worker havuzu.
+3. 16 prefork process, 512MB RAM'de bu proje için fazla.
+
+Doğru Render davranışı yeni kod deploy edilince şu olmalı:
+
+- start command: `python -m app.workers.run_worker`
+- Celery pool: `solo`
+- concurrency: `1`
+
+Eğer loglarda hâlâ `concurrency: 16 (prefork)` görüyorsan, Render eski start command / eski commit ile çalışıyordur.
+
+### Beklenen yeni log
+
+```text
+starting_celery_worker broker=redis://<host>:6379 backend=redis://<host>:6379
+```
+
+ve Celery banner tarafında prefork yerine solo / concurrency 1 görünmelidir.
+
+### Acil çözüm
+
+1. Son commit'leri GitHub'a push et.
+2. Render worker service için **Manual Deploy → Clear build cache & deploy latest commit** çalıştır.
+3. Worker settings içinde Start Command gerçekten `python -m app.workers.run_worker` mı kontrol et.
+4. Deploy sonrası logda artık `concurrency: 16 (prefork)` görünmemeli.
+
+### Gerekirse ek sert düşürme
+
+Eğer yine memory sıkışırsa iki seçenek var:
+
+- Worker'ı `-B` olmadan çalıştırıp beat'i ayrı servise almak
+- Veya worker planını bir seviye yükseltmek
+
+Ama ilk denenecek çözüm kesinlikle `solo + concurrency=1` ile redeploy'dur.
