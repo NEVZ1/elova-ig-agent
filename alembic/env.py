@@ -16,9 +16,19 @@ if config.config_file_name is not None:
 
 
 def get_url() -> str:
-    url = os.getenv("DATABASE_URL_SYNC")
-    if not url:
-        url = os.getenv("DATABASE_URL")
+    # Prefer DATABASE_URL on hosted environments (Render, etc.).
+    # Common misconfig: DATABASE_URL is set correctly, but DATABASE_URL_SYNC is left at a
+    # localhost default, which breaks migrations during deploy.
+    url = os.getenv("DATABASE_URL") or ""
+    url_sync = os.getenv("DATABASE_URL_SYNC") or ""
+    if url_sync and not url:
+        url = url_sync
+    elif url_sync and url:
+        if "localhost" in url_sync or "127.0.0.1" in url_sync:
+            # Ignore localhost sync URL if a non-local async URL exists.
+            pass
+        else:
+            url = url_sync
     if not url:
         raise RuntimeError("DATABASE_URL_SYNC (or DATABASE_URL) must be set for Alembic.")
     # Alembic uses a sync SQLAlchemy engine. Normalize to psycopg (not psycopg2)

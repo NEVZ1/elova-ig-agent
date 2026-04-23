@@ -79,6 +79,12 @@ class Settings(BaseSettings):
         if not self.database_url and not self.database_url_sync:
             raise ValueError("DATABASE_URL (async) or DATABASE_URL_SYNC (sync) must be set.")
 
+        # Hosted safeguard: if DATABASE_URL is set but DATABASE_URL_SYNC was left at a
+        # localhost default, ignore the sync value and derive from DATABASE_URL.
+        if self.env != "local" and self.database_url and self.database_url_sync:
+            if "localhost" in self.database_url_sync or "127.0.0.1" in self.database_url_sync:
+                self.database_url_sync = None
+
         if self.database_url and not self.database_url_sync:
             self.database_url_sync = _to_sync_db_url(self.database_url)
         if self.database_url_sync and not self.database_url:
