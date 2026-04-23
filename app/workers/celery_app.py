@@ -24,6 +24,10 @@ celery.conf.update(
     task_track_started=True,
     worker_prefetch_multiplier=1,
     broker_connection_retry_on_startup=True,
+    # Render small instances (512MB) can OOM with Celery's default prefork pool.
+    # Force low-memory defaults; CLI flags can still override if needed.
+    worker_pool="solo",
+    worker_concurrency=1,
 )
 
 celery.conf.beat_schedule = {
@@ -32,4 +36,3 @@ celery.conf.beat_schedule = {
         "schedule": 300.0,
     }
 }
-
