@@ -3,7 +3,6 @@ services:
     name: elova-dm-api
     runtime: python
     plan: free
-    repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
     buildCommand: pip install -r requirements.txt
     preDeployCommand: alembic upgrade head
@@ -23,9 +22,10 @@ services:
       - key: OPENAI_MODEL
         value: gpt-4.1-mini
       - key: LLM_PROVIDER
-        value: gemini
+        value: openai
       - key: LLM_UNIFIED_MODE
         value: "true"
+      # Gemini optional (only if LLM_PROVIDER=gemini)
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
@@ -49,10 +49,9 @@ services:
     name: elova-dm-worker
     runtime: python
     plan: starter
-    repo: https://gitlab.com/NEVZ1/elova-ig-agent.git
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.workers.celery_app.celery worker -B -l info
+    startCommand: celery -A app.workers.celery_app.celery worker -B -l info --concurrency=1
     envVars:
       - key: ENV
         value: production
@@ -67,9 +66,10 @@ services:
       - key: OPENAI_MODEL
         value: gpt-4.1-mini
       - key: LLM_PROVIDER
-        value: gemini
+        value: openai
       - key: LLM_UNIFIED_MODE
         value: "true"
+      # Gemini optional (only if LLM_PROVIDER=gemini)
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
