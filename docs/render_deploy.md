@@ -29,6 +29,28 @@ Render’da aşağıdakileri gir:
 - `WHATSAPP_NUMBER`
 - `BOOKING_URL`
 
+### REDIS_URL formatı
+
+`REDIS_URL` alanına komut değil, direkt bağlantı URL’si gir:
+
+Doğru:
+
+```text
+rediss://default:<PASSWORD>@<HOST>:6379
+```
+
+Yanlış:
+
+```text
+redis-cli --tls -u redis://default:<PASSWORD>@<HOST>:6379
+```
+
+Yanlış veya boş `REDIS_URL` / `CELERY_BROKER_URL` değeri worker loglarında şu hatayı üretir:
+
+```text
+KeyError: 'No such transport: '
+```
+
 ### Supabase + Render notu
 
 Supabase kullanıyorsan Render’da `db.<project-ref>.supabase.co:5432` **direct connection** yerine
