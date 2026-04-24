@@ -13,6 +13,7 @@ from app.core.security import AdminAuth
 from app.core.config import settings
 from app.workers.celery_app import celery
 from app.workers.tasks import ping
+from celery.result import AsyncResult
 from app.db.models import Lead, Message
 from app.db.session import get_async_session
 
@@ -213,3 +214,35 @@ async def debug_enqueue_ping() -> dict:
 
     res = ping.delay()
     return {"task_id": res.id}
+
+
+@router.get("/debug/task/{task_id}")
+async def debug_task(task_id: str) -> dict:
+    """
+    Inspect a Celery task state via the configured result backend.
+    Useful to confirm whether `process_incoming_dm` ran and whether it failed.
+    """
+
+    ar = AsyncResult(task_id, app=celery)
+    result = None
+    tb = None
+    try:
+        if ar.ready():
+            r = ar.result
+            result = str(r)
+            if result and len(result) > 800:
+                result = result[:800] + "…"
+            tb = ar.traceback
+            if tb and len(tb) > 1200:
+                tb = tb[:1200] + "…"
+    except Exception as exc:  # noqa: BLE001
+        result = f"<error reading result: {exc}>"
+
+    return {
+        "task_id": task_id,
+        "state": ar.state,
+        "ready": bool(ar.ready()),
+        "successful": bool(ar.successful()) if ar.ready() else None,
+        "result": result,
+        "traceback": tb,
+    }
