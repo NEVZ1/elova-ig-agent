@@ -5,6 +5,7 @@ import uuid
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from redis import Redis
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -253,3 +254,25 @@ async def debug_task(task_id: str) -> dict:
         "result": result,
         "traceback": tb,
     }
+
+
+@router.get("/debug/openai")
+async def debug_openai() -> dict:
+    """
+    Sanity-check the configured OpenAI credentials from the running service.
+    Returns only status and a truncated error body (never the API key).
+    """
+
+    key = (settings.openai_api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY_missing")
+
+    headers = {"Authorization": f"Bearer {key}"}
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get("https://api.openai.com/v1/models", headers=headers)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+    body_preview = resp.text[:400] if resp.text else ""
+    return {"ok": resp.status_code < 400, "status": resp.status_code, "body_preview": body_preview}
