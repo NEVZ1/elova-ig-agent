@@ -22,6 +22,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+@celery.task(name="app.workers.tasks.ping")
+def ping() -> dict:
+    logger.info("worker_ping")
+    return {"ok": True}
+
+
 @celery.task(name="app.workers.tasks.process_incoming_dm")
 def process_incoming_dm(event: dict) -> dict:
     """

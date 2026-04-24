@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import AdminAuth
 from app.core.config import settings
 from app.workers.celery_app import celery
+from app.workers.tasks import ping
 from app.db.models import Lead, Message
 from app.db.session import get_async_session
 
@@ -162,7 +163,32 @@ async def debug_queue() -> dict:
     redis_url = settings.redis_url or ""
 
     r = Redis.from_url(redis_url)  # type: ignore[arg-type]
-    queue_len = int(r.llen("celery"))
+
+    # Redis transport may apply a key prefix. Probe a small set of likely keys.
+    candidates = ["celery"]
+    try:
+        # Scan is safer than KEYS.
+        for k in r.scan_iter(match="*celery*", count=200):
+            ks = k.decode("utf-8", errors="ignore") if isinstance(k, (bytes, bytearray)) else str(k)
+            if ks not in candidates:
+                candidates.append(ks)
+            if len(candidates) >= 15:
+                break
+    except Exception:  # noqa: BLE001
+        pass
+
+    key_stats: list[dict] = []
+    for key in candidates:
+        try:
+            t = r.type(key)
+            t_str = t.decode() if isinstance(t, (bytes, bytearray)) else str(t)
+            if t_str == "list":
+                size = int(r.llen(key))
+            else:
+                size = None
+            key_stats.append({"key": key, "type": t_str, "llen": size})
+        except Exception:  # noqa: BLE001
+            continue
 
     return {
         "settings": {
@@ -174,7 +200,16 @@ async def debug_queue() -> dict:
             "broker_url": _url_bits(celery.conf.broker_url),
             "result_backend": _url_bits(celery.conf.result_backend),
         },
-        "redis_probe": {
-            "celery_list_len": queue_len,
-        },
+        "redis_probe": {"keys": key_stats},
     }
+
+
+@router.post("/debug/enqueue-ping")
+async def debug_enqueue_ping() -> dict:
+    """
+    Enqueue a tiny task to validate that the worker is consuming from the same broker.
+    Expect worker logs to include: `worker_ping`.
+    """
+
+    res = ping.delay()
+    return {"task_id": res.id}
