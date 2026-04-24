@@ -54,7 +54,8 @@ class Message(Base):
 
     direction: Mapped[str] = mapped_column(String(16), nullable=False)  # inbound | outbound | system
     channel: Mapped[str] = mapped_column(String(16), nullable=False, default="instagram")
-    instagram_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Meta message IDs can be longer than 128 chars.
+    instagram_message_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
     text: Mapped[str | None] = mapped_column(Text(), nullable=True)
     raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
