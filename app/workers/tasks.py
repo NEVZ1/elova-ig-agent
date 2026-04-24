@@ -107,16 +107,22 @@ def process_incoming_dm(event: dict) -> dict:
         summary_text = summary.summary_text if summary else None
 
         if convo and settings.llm_unified_mode:
-            unified = convo.generate_unified(
-                lead=lead,
-                recent_messages=recent_messages,
-                summary_text=summary_text,
-                goal=decision.goal,
-                missing_fields=decision.missing_fields,
-            )
-            _apply_lead_update_from_unified(lead, unified)
-            _upsert_summary_from_unified(session, lead, summary, unified)
-            reply = unified.reply_text
+            try:
+                unified = convo.generate_unified(
+                    lead=lead,
+                    recent_messages=recent_messages,
+                    summary_text=summary_text,
+                    goal=decision.goal,
+                    missing_fields=decision.missing_fields,
+                )
+                _apply_lead_update_from_unified(lead, unified)
+                _upsert_summary_from_unified(session, lead, summary, unified)
+                reply = unified.reply_text
+            except Exception as exc:  # noqa: BLE001
+                # If LLM is misconfigured or out of quota, we still want the bot to respond
+                # and keep the lead moving. Fall back to deterministic prompts.
+                logger.error("llm_generate_failed", provider=settings.llm_provider, err=str(exc))
+                reply = _fallback_reply(decision.missing_fields, decision.goal)
         elif convo:
             plan = convo.generate_reply(
                 lead=lead,
