@@ -135,6 +135,10 @@ async def debug_config() -> dict:
             "gemini_api_key_present": bool((settings.gemini_api_key or "").strip()),
             "gemini_model": (settings.gemini_model or "").strip(),
         },
+        "ig": {
+            "page_id_present": bool((settings.ig_page_id or "").strip()),
+            "sender_id_present": bool((settings.ig_sender_id or "").strip()),
+        },
         "ig_verify_token": {"present": bool(verify_token), "len": len(verify_token), "sha256_8": _hash8(verify_token) if verify_token else None},
         "ig_app_secret_present": bool((settings.ig_app_secret or "").strip()),
         "ig_require_signature": bool(settings.ig_require_signature),
@@ -311,3 +315,27 @@ async def debug_openai_chat() -> dict:
 
     body_preview = resp.text[:500] if resp.text else ""
     return {"ok": resp.status_code < 400, "status": resp.status_code, "model": model, "body_preview": body_preview}
+
+
+@router.get("/debug/instagram-identity")
+async def debug_instagram_identity() -> dict:
+    """
+    Resolve the Instagram sender identity for messaging:
+    - Page ID -> connected instagram_business_account / connected_instagram_account
+    Uses IG_PAGE_ACCESS_TOKEN for auth.
+    """
+
+    token = (settings.ig_page_access_token or "").strip()
+    page_id = (settings.ig_page_id or "").strip()
+    if not token or not page_id:
+        raise HTTPException(status_code=400, detail="IG_PAGE_ACCESS_TOKEN_or_IG_PAGE_ID_missing")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://graph.facebook.com/v19.0/{page_id}"
+    params = {"fields": "id,name,instagram_business_account,connected_instagram_account"}
+    with httpx.Client(timeout=15) as client:
+        resp = client.get(url, headers=headers, params=params)
+        body_preview = resp.text[:500] if resp.text else ""
+        if resp.status_code >= 400:
+            return {"ok": False, "status": resp.status_code, "body_preview": body_preview}
+        return {"ok": True, "status": resp.status_code, "data": resp.json()}

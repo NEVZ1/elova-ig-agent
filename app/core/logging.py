@@ -14,6 +14,10 @@ def configure_logging() -> None:
     root.setLevel(settings.log_level.upper())
     root.handlers.clear()
 
+    # Avoid leaking secrets in third-party HTTP client logs (URLs can include tokens).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(settings.log_level.upper())
     handler.setFormatter(jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
@@ -34,4 +38,3 @@ def configure_logging() -> None:
 
 
 logger = structlog.get_logger("elova_dm")
-

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     ig_provider: str = "meta_graph"
     ig_page_access_token: str = ""
     ig_page_id: str = ""
+    # Instagram Messaging API sender ID (Instagram Business/Professional Account ID).
+    # If set, messages are sent via /{IG_SENDER_ID}/messages. If not set, the app
+    # falls back to /{IG_PAGE_ID}/messages (Messenger-style), which may fail for IG.
+    ig_sender_id: str = ""
     ig_app_secret: str = ""
     ig_require_signature: bool = True
     ig_verify_bypass: bool = False
