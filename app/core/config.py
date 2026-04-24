@@ -63,6 +63,7 @@ class Settings(BaseSettings):
 
     ig_verify_token: str = ""
     ig_provider: str = "meta_graph"
+    ig_app_id: str = ""
     ig_page_access_token: str = ""
     ig_page_id: str = ""
     # Instagram Messaging API sender ID (Instagram Business/Professional Account ID).

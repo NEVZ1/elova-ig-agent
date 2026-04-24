@@ -136,6 +136,7 @@ async def debug_config() -> dict:
             "gemini_model": (settings.gemini_model or "").strip(),
         },
         "ig": {
+            "app_id_present": bool((settings.ig_app_id or "").strip()),
             "page_id_present": bool((settings.ig_page_id or "").strip()),
             "sender_id_present": bool((settings.ig_sender_id or "").strip()),
         },
@@ -339,3 +340,43 @@ async def debug_instagram_identity() -> dict:
         if resp.status_code >= 400:
             return {"ok": False, "status": resp.status_code, "body_preview": body_preview}
         return {"ok": True, "status": resp.status_code, "data": resp.json()}
+
+
+@router.get("/debug/instagram-token")
+async def debug_instagram_token() -> dict:
+    """
+    Validate IG_PAGE_ACCESS_TOKEN using Graph API /debug_token.
+    This helps detect when a token is a *User token* (wrong) instead of a *Page token*,
+    missing scopes, or expired.
+    """
+
+    app_id = (settings.ig_app_id or "").strip()
+    app_secret = (settings.ig_app_secret or "").strip()
+    input_token = (settings.ig_page_access_token or "").strip()
+
+    if not app_id or not app_secret:
+        raise HTTPException(status_code=400, detail="IG_APP_ID_or_IG_APP_SECRET_missing")
+    if not input_token:
+        raise HTTPException(status_code=400, detail="IG_PAGE_ACCESS_TOKEN_missing")
+
+    app_access_token = f"{app_id}|{app_secret}"
+    url = "https://graph.facebook.com/debug_token"
+    params = {"input_token": input_token, "access_token": app_access_token}
+    with httpx.Client(timeout=15) as client:
+        resp = client.get(url, params=params)
+        body_preview = resp.text[:800] if resp.text else ""
+        if resp.status_code >= 400:
+            return {"ok": False, "status": resp.status_code, "body_preview": body_preview}
+        data = resp.json().get("data") or {}
+
+    # Return a safe subset.
+    return {
+        "ok": True,
+        "is_valid": bool(data.get("is_valid")),
+        "type": data.get("type"),
+        "app_id": data.get("app_id"),
+        "user_id": data.get("user_id"),
+        "expires_at": data.get("expires_at"),
+        "scopes": data.get("scopes"),
+        "granular_scopes": data.get("granular_scopes"),
+    }
