@@ -15,9 +15,11 @@ T = TypeVar("T", bound=BaseModel)
 
 class OpenAILLM:
     def __init__(self) -> None:
-        if not settings.openai_api_key:
+        api_key = (settings.openai_api_key or "").strip()
+        if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        # Strip to guard against accidental trailing whitespace/newlines in env vars.
+        self._client = OpenAI(api_key=api_key)
         self._model = settings.openai_model
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.6, min=0.6, max=5))
@@ -38,4 +40,3 @@ class OpenAILLM:
             logger.error("llm_invalid_json", content=content[:500], provider="openai")
             raise
         return schema.model_validate(data)
-

@@ -276,3 +276,38 @@ async def debug_openai() -> dict:
 
     body_preview = resp.text[:400] if resp.text else ""
     return {"ok": resp.status_code < 400, "status": resp.status_code, "body_preview": body_preview}
+
+
+@router.get("/debug/openai-chat")
+async def debug_openai_chat() -> dict:
+    """
+    End-to-end check that the configured OpenAI key AND model can run the exact
+    endpoint used by the worker (/v1/chat/completions).
+    """
+
+    key = (settings.openai_api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY_missing")
+
+    model = (settings.openai_model or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="OPENAI_MODEL_missing")
+
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": "Return JSON: {\"ok\": true}"},
+            {"role": "user", "content": "ping"},
+        ],
+    }
+    try:
+        with httpx.Client(timeout=20) as client:
+            resp = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+    body_preview = resp.text[:500] if resp.text else ""
+    return {"ok": resp.status_code < 400, "status": resp.status_code, "model": model, "body_preview": body_preview}
