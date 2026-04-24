@@ -127,6 +127,13 @@ async def debug_config() -> dict:
     verify_token = (settings.ig_verify_token or "").strip()
     return {
         "env": settings.env,
+        "llm": {
+            "provider": (settings.llm_provider or "").strip(),
+            "openai_api_key_present": bool((settings.openai_api_key or "").strip()),
+            "openai_model": (settings.openai_model or "").strip(),
+            "gemini_api_key_present": bool((settings.gemini_api_key or "").strip()),
+            "gemini_model": (settings.gemini_model or "").strip(),
+        },
         "ig_verify_token": {"present": bool(verify_token), "len": len(verify_token), "sha256_8": _hash8(verify_token) if verify_token else None},
         "ig_app_secret_present": bool((settings.ig_app_secret or "").strip()),
         "ig_require_signature": bool(settings.ig_require_signature),
