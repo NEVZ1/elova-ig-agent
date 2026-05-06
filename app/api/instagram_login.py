@@ -67,16 +67,16 @@ async def connect_instagram() -> RedirectResponse:
         raise HTTPException(status_code=500, detail="BASE_URL must be set to an https:// URL in production")
     redirect_uri = f"{base}/auth/instagram/callback"
 
-    # Keep the scope list focused on the IG DM automation use case.
-    scope = ",".join(
-        [
-            "instagram_business_basic",
-            "instagram_business_manage_messages",
-            "pages_show_list",
-            "pages_read_engagement",
-            "business_management",
-        ]
-    )
+    # IMPORTANT:
+    # This endpoint uses the standard Facebook OAuth dialog (facebook.com/dialog/oauth),
+    # which only supports Facebook Login permissions. Instagram "business_*" scopes are
+    # not valid here and will result in "Invalid Scopes" errors.
+    #
+    # For Meta App Review, we only need to demonstrate a business can connect and that
+    # the app can read basic connected asset metadata (Page + connected IG account).
+    # The Instagram messaging capabilities are configured/approved via the Instagram
+    # use-case setup and App Review, not via this OAuth scope list.
+    scope = ",".join(["public_profile", "pages_show_list", "pages_read_engagement", "business_management"])
     state = _sign_state({"ts": int(time.time())})
 
     params = {
@@ -155,4 +155,3 @@ async def instagram_callback(request: Request, code: str | None = None, state: s
     </html>
     """
     return HTMLResponse(html, status_code=200)
-
