@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from redis import Redis
 from starlette.responses import PlainTextResponse
 
 from app.core.config import settings
@@ -13,6 +14,22 @@ from app.instagram.signature import verify_x_hub_signature_256
 from app.workers.tasks import process_incoming_dm
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def _review_set_last_dm(*, instagram_user_id: str, instagram_message_id: str | None) -> None:
+    """
+    Store lightweight "last DM received" markers for Meta App Review.
+    Best-effort only; failures must never break webhook ingestion.
+    """
+
+    try:
+        r = Redis.from_url(settings.redis_url)
+        r.set("review:last_dm_at", str(int(__import__("time").time())), ex=7 * 24 * 3600)
+        r.set("review:last_dm_user_id", instagram_user_id, ex=7 * 24 * 3600)
+        if instagram_message_id:
+            r.set("review:last_dm_message_id", instagram_message_id, ex=7 * 24 * 3600)
+    except Exception:  # noqa: BLE001
+        return
 
 
 @router.get("/instagram", response_class=PlainTextResponse)
@@ -89,6 +106,7 @@ async def instagram_webhook_receive(
         )
     for e in events:
         logger.info("dm_received", instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
+        _review_set_last_dm(instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
         try:
             res = process_incoming_dm.delay(e.model_dump())
             logger.info("queue_publish_ok", task_id=res.id)
