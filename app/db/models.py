@@ -33,6 +33,8 @@ class Lead(Base):
     proposal_status: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
     handoff_required: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     handoff_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    lost_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    internal_notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="instagram_dm")
 
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="greeting")
@@ -45,6 +47,7 @@ class Lead(Base):
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     followup_anchor_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     proposal_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_followup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

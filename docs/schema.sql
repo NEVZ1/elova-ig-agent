@@ -20,6 +20,8 @@ CREATE TABLE leads (
   proposal_status varchar(32) NOT NULL DEFAULT 'none',
   handoff_required boolean NOT NULL DEFAULT false,
   handoff_reason text,
+  lost_reason text,
+  internal_notes text,
   source varchar(64) NOT NULL DEFAULT 'instagram_dm',
   stage varchar(32) NOT NULL DEFAULT 'greeting',
   status varchar(32) NOT NULL DEFAULT 'new',
@@ -30,6 +32,7 @@ CREATE TABLE leads (
   last_outbound_at timestamptz,
   followup_anchor_at timestamptz,
   proposal_sent_at timestamptz,
+  next_followup_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

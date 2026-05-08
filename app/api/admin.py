@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AdminAuth
 from app.core.config import settings
+from app.proposal_engine.builder import build_proposal_draft
 from app.workers.celery_app import celery
 from app.workers.tasks import ping
 from celery.result import AsyncResult
@@ -90,6 +91,9 @@ async def get_lead(
         "proposal_sent_at": lead.proposal_sent_at.isoformat() if lead.proposal_sent_at else None,
         "handoff_required": lead.handoff_required,
         "handoff_reason": lead.handoff_reason,
+        "lost_reason": lead.lost_reason,
+        "internal_notes": lead.internal_notes,
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
         "source": lead.source,
         "stage": lead.stage,
         "status": lead.status,
@@ -145,6 +149,7 @@ async def review_queue(
                     or_(
                         Lead.handoff_required.is_(True),
                         Lead.proposal_status == "requested",
+                        Lead.proposal_status == "in_progress",
                         Lead.status == "reply_failed",
                         Lead.status == "pending_handoff",
                         Lead.status == "proposal_requested",
@@ -176,12 +181,69 @@ async def review_queue(
             "proposal_status": lead.proposal_status,
             "handoff_required": lead.handoff_required,
             "handoff_reason": lead.handoff_reason,
+            "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
             "followup_state": lead.followup_state,
             "last_message_at": lead.last_message_at.isoformat() if lead.last_message_at else None,
             "updated_at": lead.updated_at.isoformat(),
         }
         for lead in rows
     ]
+
+
+@router.get("/control-tower")
+async def control_tower(
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    rows = (await session.execute(select(Lead).order_by(desc(Lead.updated_at)).limit(500))).scalars().all()
+
+    def _lead_row(lead: Lead) -> dict:
+        return {
+            "id": str(lead.id),
+            "instagram_username": lead.instagram_username,
+            "name": lead.name,
+            "event_type": lead.event_type,
+            "venue_city": lead.venue_city,
+            "status": lead.status,
+            "proposal_status": lead.proposal_status,
+            "handoff_required": lead.handoff_required,
+            "urgency_level": lead.urgency_level,
+            "owner": lead.owner,
+            "updated_at": lead.updated_at.isoformat(),
+        }
+
+    review = [
+        _lead_row(lead)
+        for lead in rows
+        if lead.handoff_required
+        or lead.proposal_status in {"requested", "in_progress"}
+        or lead.status in {"reply_failed", "pending_handoff", "proposal_requested"}
+    ]
+    recovery = [
+        _lead_row(lead)
+        for lead in rows
+        if lead.status in {"reply_failed", "lost"} or lead.next_followup_at is not None
+    ]
+    priority = [
+        _lead_row(lead)
+        for lead in rows
+        if lead.owner == "priority_queue" or lead.urgency_level == "high"
+    ]
+
+    return {
+        "summary": {
+            "total_leads": len(rows),
+            "review_queue": len(review),
+            "recovery_queue": len(recovery),
+            "priority_queue": len(priority),
+            "proposal_requested": sum(1 for lead in rows if lead.proposal_status == "requested"),
+            "proposal_in_progress": sum(1 for lead in rows if lead.proposal_status == "in_progress"),
+            "pending_handoff": sum(1 for lead in rows if lead.status == "pending_handoff"),
+            "reply_failed": sum(1 for lead in rows if lead.status == "reply_failed"),
+        },
+        "priority_leads": priority[:10],
+        "review_leads": review[:10],
+        "recovery_leads": recovery[:10],
+    }
 
 
 @router.post("/leads/{lead_id}/mark-handoff-handled")
@@ -311,6 +373,7 @@ async def get_sales_brief(
         "lead": summary,
         "missing_fields": missing,
         "recommended_next_step": recommendation,
+        "internal_notes": lead.internal_notes,
         "recent_messages": [
             {
                 "direction": m.direction,
@@ -369,6 +432,190 @@ async def get_operator_suggestions(
     }
 
 
+@router.get("/leads/{lead_id}/proposal-draft")
+async def get_proposal_draft(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    return build_proposal_draft(lead)
+
+
+@router.get("/leads/{lead_id}/execution-packet")
+async def get_execution_packet(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    recent_messages = (
+        (
+            await session.execute(
+                select(Message).where(Message.lead_id == lead_id).order_by(desc(Message.created_at)).limit(12)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    recent_messages = list(reversed(recent_messages))
+
+    event_label = lead.event_type or "event"
+    date_label = lead.event_date.isoformat() if lead.event_date else (lead.event_date_text or "your preferred date")
+    city_label = lead.venue_city or "the venue area"
+    guest_label = str(lead.guest_count) if lead.guest_count else "your guest count"
+    budget_label = _budget_label(lead)
+
+    missing = []
+    for field, value in [
+        ("event_type", lead.event_type),
+        ("date", lead.event_date or lead.event_date_text),
+        ("guest_count", lead.guest_count),
+        ("venue_city", lead.venue_city),
+        ("budget", lead.budget_min or lead.budget_max),
+        ("name", lead.name),
+    ]:
+        if not value:
+            missing.append(field)
+
+    next_action = "continue_dm"
+    if lead.handoff_required:
+        next_action = "handoff"
+    elif lead.proposal_status in {"requested", "in_progress"}:
+        next_action = "prepare_proposal"
+    elif lead.status == "reply_failed":
+        next_action = "fix_delivery_then_retry"
+    elif lead.status == "lost":
+        next_action = "soft_reactivation"
+
+    proposal = build_proposal_draft(lead)
+
+    return {
+        "lead": {
+            "id": str(lead.id),
+            "instagram_username": lead.instagram_username,
+            "name": lead.name,
+            "event_type": event_label,
+            "date": date_label,
+            "venue_city": city_label,
+            "guest_count": guest_label,
+            "budget_signal": budget_label,
+            "preferred_channel": lead.preferred_channel or "instagram",
+            "urgency_level": lead.urgency_level or "medium",
+            "owner": lead.owner,
+            "status": lead.status,
+            "proposal_status": lead.proposal_status,
+            "handoff_required": lead.handoff_required,
+        },
+        "missing_fields": missing,
+        "next_action": next_action,
+        "operator_messages": {
+            "handoff_message": (
+                f"Of course. I’d be happy to continue personally. "
+                f"If you send {city_label}, {date_label}, and {guest_label}, we can guide the next step quickly."
+            ),
+            "quote_message": (
+                f"Thank you. Based on the {event_label}, we can prepare a tailored starting direction. "
+                f"To shape it properly, we would confirm the city, guest count, and budget range first."
+            ),
+            "recovery_message": (
+                "Just checking in gently in case the timing has shifted. "
+                "If the plans are still open, I’d be happy to guide the next step."
+            ),
+        },
+        "proposal": proposal.get("proposal"),
+        "recent_messages": [
+            {
+                "direction": m.direction,
+                "text": m.text,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in recent_messages
+        ],
+    }
+
+
+@router.post("/leads/{lead_id}/set-owner")
+async def set_owner(
+    lead_id: uuid.UUID,
+    owner: str,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.owner = owner.strip() or None
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "owner": lead.owner}
+
+
+@router.post("/leads/{lead_id}/set-notes")
+async def set_notes(
+    lead_id: uuid.UUID,
+    notes: str,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.internal_notes = notes.strip() or None
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "internal_notes": lead.internal_notes}
+
+
+@router.post("/leads/{lead_id}/mark-won")
+async def mark_won(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.status = "won"
+    lead.lost_reason = None
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "status": lead.status}
+
+
+@router.post("/leads/{lead_id}/mark-lost")
+async def mark_lost(
+    lead_id: uuid.UUID,
+    reason: str,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.status = "lost"
+    lead.lost_reason = reason.strip() or "not_specified"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "status": lead.status, "lost_reason": lead.lost_reason}
+
+
+@router.post("/leads/{lead_id}/set-next-followup")
+async def set_next_followup(
+    lead_id: uuid.UUID,
+    iso_datetime: str,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    try:
+        lead.next_followup_at = datetime.fromisoformat(iso_datetime.replace("Z", "+00:00"))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"invalid_datetime:{exc}") from exc
+    await session.commit()
+    return {
+        "ok": True,
+        "lead_id": str(lead.id),
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+    }
+
+
 def _budget_label(lead: Lead) -> str:
     if lead.budget_min and lead.budget_max:
         return f"{lead.budget_min}-{lead.budget_max} {lead.budget_currency or ''}".strip()
@@ -379,6 +626,84 @@ def _budget_label(lead: Lead) -> str:
     if lead.project_value_estimate:
         return f"estimated around {lead.project_value_estimate}"
     return "not confirmed yet"
+
+
+@router.get("/recovery-queue")
+async def recovery_queue(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    limit = max(1, min(200, limit))
+    rows = (
+        (
+            await session.execute(
+                select(Lead)
+                .where(
+                    or_(
+                        Lead.status == "reply_failed",
+                        Lead.status == "lost",
+                        Lead.next_followup_at.is_not(None),
+                    )
+                )
+                .order_by(desc(Lead.updated_at))
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": str(lead.id),
+            "instagram_username": lead.instagram_username,
+            "name": lead.name,
+            "event_type": lead.event_type,
+            "venue_city": lead.venue_city,
+            "status": lead.status,
+            "lost_reason": lead.lost_reason,
+            "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+            "preferred_channel": lead.preferred_channel,
+            "proposal_status": lead.proposal_status,
+            "updated_at": lead.updated_at.isoformat(),
+        }
+        for lead in rows
+    ]
+
+
+@router.get("/leads/{lead_id}/recovery-suggestions")
+async def get_recovery_suggestions(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    if lead.status == "reply_failed":
+        next_action = "fix_delivery_then_retry"
+        message = "We had a delivery issue on our side. If you'd still like, I can continue with the next step here."
+    elif lead.status == "lost":
+        next_action = "soft_reactivation"
+        message = (
+            "Just checking in gently in case the timing has shifted. "
+            "If the plans are still open, I’d be happy to guide the next step."
+        )
+    elif lead.next_followup_at:
+        next_action = "scheduled_followup"
+        message = (
+            "Just following up in case you'd still like me to prepare the next step. "
+            "If you share the venue area and guest count, I can narrow the direction quickly."
+        )
+    else:
+        next_action = "monitor"
+        message = "No immediate recovery action is needed."
+
+    return {
+        "next_action": next_action,
+        "recommended_message": message,
+        "lost_reason": lead.lost_reason,
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+    }
 
 
 @router.get("/debug/config")
