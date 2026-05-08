@@ -293,10 +293,17 @@ async def mark_handoff_handled(
 
     lead.handoff_required = False
     lead.handoff_reason = None
+    if not lead.next_followup_at:
+        lead.next_followup_at = _utcnow()
     if lead.status == "pending_handoff":
         lead.status = "active"
     await session.commit()
-    return {"ok": True, "lead_id": str(lead.id), "status": lead.status}
+    return {
+        "ok": True,
+        "lead_id": str(lead.id),
+        "status": lead.status,
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+    }
 
 
 @router.post("/leads/{lead_id}/mark-proposal-sent")
@@ -310,6 +317,8 @@ async def mark_proposal_sent(
 
     lead.proposal_status = "sent"
     lead.proposal_sent_at = _utcnow()
+    if not lead.next_followup_at:
+        lead.next_followup_at = _utcnow()
     if lead.status == "proposal_requested":
         lead.status = "awaiting_user"
     await session.commit()
@@ -318,6 +327,7 @@ async def mark_proposal_sent(
         "lead_id": str(lead.id),
         "proposal_status": lead.proposal_status,
         "proposal_sent_at": lead.proposal_sent_at.isoformat() if lead.proposal_sent_at else None,
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
     }
 
 
@@ -634,6 +644,7 @@ async def mark_won(
         raise HTTPException(status_code=404, detail="not_found")
     lead.status = "won"
     lead.lost_reason = None
+    lead.next_followup_at = None
     await session.commit()
     return {"ok": True, "lead_id": str(lead.id), "status": lead.status}
 
@@ -649,8 +660,16 @@ async def mark_lost(
         raise HTTPException(status_code=404, detail="not_found")
     lead.status = "lost"
     lead.lost_reason = reason.strip() or "not_specified"
+    if not lead.next_followup_at:
+        lead.next_followup_at = _utcnow()
     await session.commit()
-    return {"ok": True, "lead_id": str(lead.id), "status": lead.status, "lost_reason": lead.lost_reason}
+    return {
+        "ok": True,
+        "lead_id": str(lead.id),
+        "status": lead.status,
+        "lost_reason": lead.lost_reason,
+        "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+    }
 
 
 @router.post("/leads/{lead_id}/set-next-followup")
@@ -859,6 +878,58 @@ async def get_trust_pack(
         "testimonial_ask": testimonial_ask,
         "review_ask": review_ask,
         "referral_ask": referral_ask,
+    }
+
+
+@router.get("/leads/{lead_id}/close-plan")
+async def get_close_plan(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    event_label = lead.event_type or "event"
+
+    if lead.status == "won":
+        next_action = "collect_review_and_referral"
+        primary_message = (
+            f"Thank you again for trusting Elova with your {event_label}. "
+            f"The next best step is to collect a short testimonial and, if appropriate, a Google review."
+        )
+    elif lead.proposal_status == "sent":
+        next_action = "follow_up_on_proposal"
+        primary_message = (
+            "Just checking in on the proposal in case it would help to refine the scope or walk through the direction together."
+        )
+    elif lead.proposal_status in {"requested", "in_progress"}:
+        next_action = "move_to_sent_proposal"
+        primary_message = (
+            "This lead is already in proposal motion. The highest-value next step is to send the clearest possible version quickly."
+        )
+    elif lead.handoff_required:
+        next_action = "complete_handoff"
+        primary_message = (
+            "This lead asked for a person. The highest-value move is a clean, personal handoff with very little friction."
+        )
+    elif lead.status == "lost":
+        next_action = "reactivate_later"
+        primary_message = (
+            "This lead is marked lost. Keep the tone light and leave the door open for timing, budget, or scope changes later."
+        )
+    else:
+        next_action = "continue_qualification"
+        primary_message = "The next step is to clarify the missing basics and move toward a proposal or handoff."
+
+    return {
+        "lead_id": str(lead.id),
+        "status": lead.status,
+        "proposal_status": lead.proposal_status,
+        "next_action": next_action,
+        "primary_message": primary_message,
+        "suggested_followup_at": _suggested_followup_at(lead),
+        "trust_pack_available": lead.status == "won",
     }
 
 
