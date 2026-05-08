@@ -18,6 +18,8 @@ def build_proposal_draft(lead: Lead) -> dict[str, Any]:
     short_quote_draft = _short_quote_draft(event_label, city_label, date_label, guest_label, budget_label, lead)
     premium_proposal_intro = _premium_proposal_intro(event_label, city_label, date_label, urgency_label)
     next_step_copy = _next_step_copy(recommended_next_action, channel_label, city_label, date_label, guest_label)
+    whatsapp_handoff_copy = _whatsapp_handoff_copy(event_label, city_label, date_label, guest_label)
+    close_softener = _close_softener(recommended_next_action)
 
     proposal_outline = [
         f"Event type: {event_label}",
@@ -69,6 +71,8 @@ def build_proposal_draft(lead: Lead) -> dict[str, Any]:
             "short_quote_draft": short_quote_draft,
             "premium_proposal_intro": premium_proposal_intro,
             "next_step_copy": next_step_copy,
+            "whatsapp_handoff_copy": whatsapp_handoff_copy,
+            "close_softener": close_softener,
             "recommended_next_action": recommended_next_action,
             "proposal_outline": proposal_outline,
             "operator_notes": operator_notes,
@@ -100,12 +104,14 @@ def _short_quote_draft(
 ) -> str:
     if lead.budget_min or lead.budget_max:
         return (
-            f"For the {event_label} in {city_label}, a tailored starting range would be {budget_label}. "
-            f"The final scope depends on the venue, styling direction, and guest count ({guest_label})."
+            f"For the {event_label} in {city_label}, a tailored starting range would sit around {budget_label}. "
+            f"The final scope would depend on the venue, styling direction, and guest count ({guest_label}), "
+            f"so we would keep the proposal clean and aligned with the atmosphere you want."
         )
     return (
-        f"For the {event_label} in {city_label}, pricing is scope-based and depends on the venue, styling direction, "
-        f"and guest count ({guest_label}). If you share the date ({date_label}), we can narrow it down quickly."
+        f"For the {event_label} in {city_label}, pricing is scope-based and shaped by the venue, styling direction, "
+        f"and guest count ({guest_label}). If you share the date ({date_label}), we can narrow the range quickly and "
+        f"move to a more tailored direction."
     )
 
 
@@ -113,8 +119,8 @@ def _premium_proposal_intro(event_label: str, city_label: str, date_label: str, 
     tone = "calm and considered" if urgency_label != "high" else "fast, clear, and direct"
     return (
         f"Thank you — this {event_label} feels like a beautiful fit for a boutique, {tone} approach. "
-        f"We would shape the experience around the venue area, {city_label}, and the date {date_label}, "
-        f"so the final direction feels polished, cohesive, and intentional."
+        f"Our role would be to shape the experience around the venue area, {city_label}, and the date {date_label}, "
+        f"so the final direction feels refined, cohesive, and quietly memorable rather than overly busy."
     )
 
 
@@ -127,13 +133,13 @@ def _next_step_copy(
 ) -> str:
     if recommended_next_action == "handoff":
         return (
-            f"If you'd like, we can continue on {channel_label} and keep the next step simple. "
-            f"Just send the venue area, date, and guest count ({guest_label}) and we’ll guide it from there."
+            f"If you'd like, we can continue on {channel_label} and keep the next step very simple. "
+            f"Just send the venue area, date, and guest count ({guest_label}), and we’ll guide it from there personally."
         )
     if recommended_next_action == "prepare_proposal":
         return (
             f"If you send the venue area ({city_label}), date ({date_label}), and guest count ({guest_label}), "
-            f"I can prepare a concise proposal direction next."
+            f"I can prepare a concise proposal direction next, so you can quickly see what the right scope feels like."
         )
     if recommended_next_action == "fix_delivery":
         return "The reply path needs a quick check before we continue. Once that’s fixed, we can send the next step cleanly."
@@ -145,6 +151,22 @@ def _next_step_copy(
         f"To keep this moving, ask for the venue area, date, and guest count ({guest_label}). "
         f"That is enough to prepare the next step cleanly."
     )
+
+
+def _whatsapp_handoff_copy(event_label: str, city_label: str, date_label: str, guest_label: str) -> str:
+    return (
+        f"If it feels easier, we can continue on WhatsApp and keep this efficient. "
+        f"For the {event_label}, just send the venue area ({city_label}), date ({date_label}), and guest count ({guest_label}), "
+        f"and we can shape the next step without a long back and forth."
+    )
+
+
+def _close_softener(recommended_next_action: str) -> str:
+    if recommended_next_action == "prepare_proposal":
+        return "The goal is not to overload you with options, but to show the clearest next direction."
+    if recommended_next_action == "handoff":
+        return "We can keep it simple and move one step at a time."
+    return "Once the basics are clear, the right direction becomes much easier to shape."
 
 
 def _event_label(lead: Lead) -> str:

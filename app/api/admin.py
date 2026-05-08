@@ -438,11 +438,11 @@ async def get_operator_suggestions(
 
     handoff_message = (
         f"Of course. I’d be happy to continue personally. "
-        f"If you send {city_label}, {date_label}, and {guest_label}, we can guide the next step quickly."
+        f"If you send {city_label}, {date_label}, and {guest_label}, we can guide the next step quickly without overcomplicating it."
     )
     quote_message = (
         f"Thank you. Based on the {event_label}, we can prepare a tailored starting direction. "
-        f"To shape it properly, we would confirm the city, guest count, and budget range first."
+        f"To shape it properly, we would confirm the city, guest count, and budget range first, then narrow the right scope for you."
     )
     proposal_outline = [
         f"Event type: {event_label}",
@@ -810,18 +810,18 @@ async def get_recovery_suggestions(
 
     if lead.status == "reply_failed":
         next_action = "fix_delivery_then_retry"
-        message = "We had a delivery issue on our side. If you'd still like, I can continue with the next step here."
+        message = "We had a delivery issue on our side. If you'd still like, I can continue with the next step here and keep it simple."
     elif lead.status == "lost":
         next_action = "soft_reactivation"
         message = (
             "Just checking in gently in case the timing has shifted. "
-            "If the plans are still open, I’d be happy to guide the next step."
+            "If the plans are still open, I’d be happy to guide the next step in a simple, tailored way."
         )
     elif lead.next_followup_at:
         next_action = "scheduled_followup"
         message = (
             "Just following up in case you'd still like me to prepare the next step. "
-            "If you share the venue area and guest count, I can narrow the direction quickly."
+            "If you share the venue area and guest count, I can narrow the direction quickly and make the next step more concrete."
         )
     else:
         next_action = "monitor"
@@ -832,6 +832,33 @@ async def get_recovery_suggestions(
         "recommended_message": message,
         "lost_reason": lead.lost_reason,
         "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
+    }
+
+
+@router.get("/leads/{lead_id}/trust-pack")
+async def get_trust_pack(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    event_label = lead.event_type or "event"
+    testimonial_ask = (
+        f"Thank you again for trusting Elova with your {event_label}. "
+        f"If you’re comfortable, I’d love to ask for a short testimonial about the overall experience and atmosphere."
+    )
+    review_ask = (
+        "If the experience felt meaningful and smooth, a short Google review would genuinely help future clients feel more confident reaching out."
+    )
+    referral_ask = (
+        "And if someone in your circle is planning a celebration with a similar feel, I’d be very happy to help them as well."
+    )
+    return {
+        "testimonial_ask": testimonial_ask,
+        "review_ask": review_ask,
+        "referral_ask": referral_ask,
     }
 
 
