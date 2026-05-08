@@ -35,6 +35,9 @@ class Lead(Base):
     handoff_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     lost_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     internal_notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_requested")
+    testimonial_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_requested")
+    referral_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_requested")
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="instagram_dm")
 
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="greeting")

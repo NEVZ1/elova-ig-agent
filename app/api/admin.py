@@ -55,6 +55,9 @@ async def list_leads(
             "proposal_status": lead.proposal_status,
             "handoff_required": lead.handoff_required,
             "followup_state": lead.followup_state,
+            "review_status": lead.review_status,
+            "testimonial_status": lead.testimonial_status,
+            "referral_status": lead.referral_status,
             "last_message_at": lead.last_message_at.isoformat() if lead.last_message_at else None,
             "updated_at": lead.updated_at.isoformat(),
         }
@@ -93,6 +96,9 @@ async def get_lead(
         "handoff_reason": lead.handoff_reason,
         "lost_reason": lead.lost_reason,
         "internal_notes": lead.internal_notes,
+        "review_status": lead.review_status,
+        "testimonial_status": lead.testimonial_status,
+        "referral_status": lead.referral_status,
         "next_followup_at": lead.next_followup_at.isoformat() if lead.next_followup_at else None,
         "source": lead.source,
         "stage": lead.stage,
@@ -878,7 +884,128 @@ async def get_trust_pack(
         "testimonial_ask": testimonial_ask,
         "review_ask": review_ask,
         "referral_ask": referral_ask,
+        "statuses": {
+            "review_status": lead.review_status,
+            "testimonial_status": lead.testimonial_status,
+            "referral_status": lead.referral_status,
+        },
     }
+
+
+@router.get("/trust-queue")
+async def trust_queue(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    limit = max(1, min(200, limit))
+    rows = (
+        (
+            await session.execute(
+                select(Lead)
+                .where(Lead.status == "won")
+                .order_by(desc(Lead.updated_at))
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": str(lead.id),
+            "instagram_username": lead.instagram_username,
+            "name": lead.name,
+            "event_type": lead.event_type,
+            "review_status": lead.review_status,
+            "testimonial_status": lead.testimonial_status,
+            "referral_status": lead.referral_status,
+            "updated_at": lead.updated_at.isoformat(),
+        }
+        for lead in rows
+        if not (
+            lead.review_status == "collected"
+            and lead.testimonial_status == "collected"
+            and lead.referral_status == "collected"
+        )
+    ]
+
+
+@router.post("/leads/{lead_id}/mark-review-requested")
+async def mark_review_requested(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.review_status = "requested"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "review_status": lead.review_status}
+
+
+@router.post("/leads/{lead_id}/mark-testimonial-requested")
+async def mark_testimonial_requested(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.testimonial_status = "requested"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "testimonial_status": lead.testimonial_status}
+
+
+@router.post("/leads/{lead_id}/mark-referral-requested")
+async def mark_referral_requested(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.referral_status = "requested"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "referral_status": lead.referral_status}
+
+
+@router.post("/leads/{lead_id}/mark-review-collected")
+async def mark_review_collected(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.review_status = "collected"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "review_status": lead.review_status}
+
+
+@router.post("/leads/{lead_id}/mark-testimonial-collected")
+async def mark_testimonial_collected(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.testimonial_status = "collected"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "testimonial_status": lead.testimonial_status}
+
+
+@router.post("/leads/{lead_id}/mark-referral-collected")
+async def mark_referral_collected(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+    lead.referral_status = "collected"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "referral_status": lead.referral_status}
 
 
 @router.get("/leads/{lead_id}/close-plan")
