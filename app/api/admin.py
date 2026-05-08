@@ -246,6 +246,42 @@ async def control_tower(
     }
 
 
+@router.get("/action-list")
+async def action_list(
+    limit: int = 25,
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    limit = max(1, min(100, limit))
+    rows = (await session.execute(select(Lead).order_by(desc(Lead.updated_at)).limit(500))).scalars().all()
+
+    items = []
+    for lead in rows:
+        score = _lead_score(lead)
+        next_action = _next_action_for_lead(lead)
+        if next_action == "monitor":
+            continue
+        items.append(
+            {
+                "lead_id": str(lead.id),
+                "instagram_username": lead.instagram_username,
+                "name": lead.name,
+                "event_type": lead.event_type,
+                "venue_city": lead.venue_city,
+                "status": lead.status,
+                "proposal_status": lead.proposal_status,
+                "owner": lead.owner,
+                "urgency_level": lead.urgency_level,
+                "score": score,
+                "next_action": next_action,
+                "suggested_followup_at": _suggested_followup_at(lead),
+                "updated_at": lead.updated_at.isoformat(),
+            }
+        )
+
+    items.sort(key=lambda item: (-item["score"], item["updated_at"]), reverse=False)
+    return items[:limit]
+
+
 @router.post("/leads/{lead_id}/mark-handoff-handled")
 async def mark_handoff_handled(
     lead_id: uuid.UUID,
@@ -492,6 +528,7 @@ async def get_execution_packet(
         next_action = "soft_reactivation"
 
     proposal = build_proposal_draft(lead)
+    score = _lead_score(lead)
 
     return {
         "lead": {
@@ -509,9 +546,11 @@ async def get_execution_packet(
             "status": lead.status,
             "proposal_status": lead.proposal_status,
             "handoff_required": lead.handoff_required,
+            "score": score,
         },
         "missing_fields": missing,
         "next_action": next_action,
+        "suggested_followup_at": _suggested_followup_at(lead),
         "operator_messages": {
             "handoff_message": (
                 f"Of course. I’d be happy to continue personally. "
@@ -535,6 +574,25 @@ async def get_execution_packet(
             }
             for m in recent_messages
         ],
+    }
+
+
+@router.get("/leads/{lead_id}/scorecard")
+async def get_scorecard(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    breakdown = _lead_score_breakdown(lead)
+    return {
+        "lead_id": str(lead.id),
+        "score": sum(item["points"] for item in breakdown),
+        "breakdown": breakdown,
+        "next_action": _next_action_for_lead(lead),
+        "suggested_followup_at": _suggested_followup_at(lead),
     }
 
 
@@ -626,6 +684,77 @@ def _budget_label(lead: Lead) -> str:
     if lead.project_value_estimate:
         return f"estimated around {lead.project_value_estimate}"
     return "not confirmed yet"
+
+
+def _lead_score(lead: Lead) -> int:
+    return sum(item["points"] for item in _lead_score_breakdown(lead))
+
+
+def _lead_score_breakdown(lead: Lead) -> list[dict]:
+    items: list[dict] = []
+    if lead.handoff_required:
+        items.append({"reason": "human handoff requested", "points": 35})
+    if lead.proposal_status == "requested":
+        items.append({"reason": "proposal requested", "points": 30})
+    if lead.proposal_status == "in_progress":
+        items.append({"reason": "proposal in progress", "points": 20})
+    if lead.urgency_level == "high":
+        items.append({"reason": "high urgency", "points": 20})
+    if lead.preferred_channel == "whatsapp":
+        items.append({"reason": "prefers WhatsApp", "points": 10})
+    if (lead.budget_max or 0) >= 150000:
+        items.append({"reason": "high budget signal", "points": 20})
+    elif (lead.budget_max or 0) >= 75000 or (lead.budget_min or 0) >= 75000:
+        items.append({"reason": "mid-high budget signal", "points": 12})
+    if (lead.guest_count or 0) >= 120:
+        items.append({"reason": "large guest count", "points": 12})
+    elif (lead.guest_count or 0) >= 50:
+        items.append({"reason": "qualified guest count", "points": 8})
+    if lead.status == "reply_failed":
+        items.append({"reason": "reply delivery issue", "points": 18})
+    if lead.next_followup_at is not None:
+        items.append({"reason": "scheduled follow-up exists", "points": 8})
+    if not items:
+        items.append({"reason": "general monitoring", "points": 5})
+    return items
+
+
+def _next_action_for_lead(lead: Lead) -> str:
+    if lead.status == "won":
+        return "handover_to_delivery"
+    if lead.status == "lost":
+        return "soft_reactivation"
+    if lead.status == "reply_failed":
+        return "fix_delivery_then_retry"
+    if lead.handoff_required:
+        return "human_handoff"
+    if lead.proposal_status == "requested":
+        return "prepare_proposal"
+    if lead.proposal_status == "in_progress":
+        return "send_proposal"
+    if lead.next_followup_at is not None:
+        return "follow_up"
+    if lead.owner == "priority_queue" or lead.urgency_level == "high":
+        return "priority_outreach"
+    if lead.status == "awaiting_user":
+        return "wait_or_follow_up"
+    return "monitor"
+
+
+def _suggested_followup_at(lead: Lead) -> str | None:
+    if lead.next_followup_at:
+        return lead.next_followup_at.isoformat()
+    if lead.status in {"proposal_requested", "pending_handoff"}:
+        return "within_2_hours"
+    if lead.proposal_status == "in_progress":
+        return "today"
+    if lead.status == "reply_failed":
+        return "immediately_after_fix"
+    if lead.urgency_level == "high":
+        return "within_1_hour"
+    if lead.status == "awaiting_user":
+        return "within_24_hours_if_silent"
+    return None
 
 
 @router.get("/recovery-queue")
