@@ -55,6 +55,8 @@ def _enforce_luxury_constraints(text: str, *, action: str) -> str:
         cleaned = "?".join(parts[:2]).strip() + "?"
     if action == "push_whatsapp" and settings.whatsapp_number and settings.whatsapp_number not in cleaned:
         cleaned = f"{cleaned} WhatsApp works best for quick details: {settings.whatsapp_number}"
-    if action == "suggest_booking" and settings.booking_url and settings.booking_url not in cleaned:
+    if action in {"suggest_booking", "request_quote"} and settings.booking_url and settings.booking_url not in cleaned:
         cleaned = f"{cleaned} If you’d like, you can book a short consult here: {settings.booking_url}"
+    if action == "human_handoff" and settings.whatsapp_number and settings.whatsapp_number not in cleaned:
+        cleaned = f"{cleaned} You can also continue on WhatsApp here: {settings.whatsapp_number}"
     return cleaned[:1200]

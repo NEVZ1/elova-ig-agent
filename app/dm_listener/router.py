@@ -104,12 +104,23 @@ async def instagram_webhook_receive(
             object=payload.get("object"),
             entry0_keys=list(entry0.keys())[:30] if isinstance(entry0, dict) else None,
         )
+    queued = 0
+    enqueue_failed = 0
     for e in events:
         logger.info("dm_received", instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
         _review_set_last_dm(instagram_user_id=e.instagram_user_id, instagram_message_id=e.instagram_message_id)
         try:
             res = process_incoming_dm.delay(e.model_dump())
             logger.info("queue_publish_ok", task_id=res.id)
+            queued += 1
         except Exception as exc:  # noqa: BLE001
-            logger.error("queue_publish_failed", err=str(exc))
-    return {"ok": True, "accepted": len(events)}
+            enqueue_failed += 1
+            logger.error(
+                "queue_publish_failed",
+                instagram_user_id=e.instagram_user_id,
+                instagram_message_id=e.instagram_message_id,
+                err=str(exc),
+            )
+    if events and queued == 0:
+        raise HTTPException(status_code=503, detail="queue_unavailable")
+    return {"ok": enqueue_failed == 0, "accepted": len(events), "queued": queued, "enqueue_failed": enqueue_failed}

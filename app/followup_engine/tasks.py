@@ -29,6 +29,7 @@ def send_due_followups() -> dict:
     final_cutoff = now - timedelta(hours=24)
 
     sent = 0
+    failed = 0
     client = get_instagram_client()
 
     with SyncSessionLocal() as session:
@@ -52,7 +53,9 @@ def send_due_followups() -> dict:
         for lead in leads:
             if lead.followup_state == "none" and lead.followup_anchor_at and lead.followup_anchor_at <= nudge_cutoff:
                 text = soft_nudge()
-                _send_followup_sync(client, lead.instagram_user_id, text)
+                if not _send_followup_sync(client, lead.instagram_user_id, text, lead_id=str(lead.id), kind="nudge"):
+                    failed += 1
+                    continue
                 lead.followup_state = "nudge_sent"
                 lead.stage = "followup"
                 lead.last_outbound_at = now
@@ -63,7 +66,9 @@ def send_due_followups() -> dict:
 
             if lead.followup_state == "nudge_sent" and lead.followup_anchor_at and lead.followup_anchor_at <= final_cutoff:
                 text = final_followup()
-                _send_followup_sync(client, lead.instagram_user_id, text)
+                if not _send_followup_sync(client, lead.instagram_user_id, text, lead_id=str(lead.id), kind="final"):
+                    failed += 1
+                    continue
                 lead.followup_state = "final_sent"
                 lead.stage = "followup"
                 lead.last_outbound_at = now
@@ -74,12 +79,14 @@ def send_due_followups() -> dict:
 
         session.commit()
 
-    logger.info("followups_processed", sent=sent)
-    return {"sent": sent}
+    logger.info("followups_processed", sent=sent, failed=failed)
+    return {"sent": sent, "failed": failed}
 
 
-def _send_followup_sync(client, recipient_id: str, text: str) -> None:  # noqa: ANN001
+def _send_followup_sync(client, recipient_id: str, text: str, *, lead_id: str, kind: str) -> bool:  # noqa: ANN001
     try:
         client.send_text_sync(OutboundMessage(recipient_id=recipient_id, text=text))
+        return True
     except Exception as exc:  # noqa: BLE001
-        logger.error("followup_send_failed", recipient_id=recipient_id, err=str(exc))
+        logger.error("followup_send_failed", recipient_id=recipient_id, lead_id=lead_id, kind=kind, err=str(exc))
+        return False

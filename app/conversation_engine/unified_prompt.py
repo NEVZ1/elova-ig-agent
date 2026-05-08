@@ -26,12 +26,16 @@ Business links:
 
 You must return JSON only, with these keys:
 reply_text, stage, intent, action,
-name, event_type, event_date, event_date_text, guest_count, budget_min, budget_max, budget_currency,
+name, event_type, event_date, event_date_text, guest_count, venue_city, budget_min, budget_max, budget_currency,
+project_value_estimate, preferred_channel, urgency_level, handoff_required, handoff_reason, proposal_status,
 summary_text, key_facts
 
 Extraction rules:
 - Only fill lead fields if clearly stated by the user. Do not guess.
 - event_date must be YYYY-MM-DD only if precise, otherwise use event_date_text.
+- preferred_channel must be one of: instagram, whatsapp, phone, booking.
+- urgency_level must be one of: low, medium, high.
+- proposal_status should be 'requested' only if the user explicitly asks for pricing, a quote, a package, or a proposal.
 - key_facts is a small JSON object with any confirmed facts.
 """
 
@@ -41,7 +45,9 @@ def build_unified_system(lead: Lead, goal: str, missing_fields: list[str]) -> st
     return UNIFIED_SYSTEM.format(whatsapp=settings.whatsapp_number, booking=settings.booking_url) + (
         f"\nCurrent goal: {goal}\n"
         f"Known lead info: name={lead.name!r}, event_type={lead.event_type!r}, event_date={lead.event_date or lead.event_date_text!r}, "
-        f"guest_count={lead.guest_count!r}, budget_min={lead.budget_min!r}, budget_max={lead.budget_max!r}, currency={lead.budget_currency!r}\n"
+        f"guest_count={lead.guest_count!r}, venue_city={lead.venue_city!r}, budget_min={lead.budget_min!r}, "
+        f"budget_max={lead.budget_max!r}, currency={lead.budget_currency!r}, preferred_channel={lead.preferred_channel!r}, "
+        f"urgency_level={lead.urgency_level!r}, proposal_status={lead.proposal_status!r}\n"
         f"Missing: {missing}\n"
         f"Now: {datetime.utcnow().isoformat()}Z\n"
     )
@@ -57,4 +63,3 @@ def build_unified_user(recent_messages: list[dict], existing_summary: str | None
     for m in recent_messages:
         lines.append(f"{m['direction']}: {m.get('text') or ''}".strip())
     return "\n".join(lines).strip()
-

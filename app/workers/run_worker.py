@@ -32,9 +32,24 @@ def main() -> None:
         flush=True,
     )
 
+    argv = sys.argv[1:]
+    mode = (os.getenv("CELERY_MODE") or "").strip().lower()
+    command = (argv[0].strip().lower() if argv else mode) or "worker"
+
+    if command == "beat":
+        celery.start(
+            argv
+            or [
+                "beat",
+                "-l",
+                "info",
+            ]
+        )
+        return
+
     # Render small instances (512MB) can OOM with prefork (default). Use solo pool.
-    # Also avoid running embedded Beat (-B) in the same process on tiny instances.
-    args = sys.argv[1:] or [
+    # Run beat separately for more reliable scheduling.
+    args = argv or [
         "worker",
         "-l",
         "info",

@@ -17,8 +17,14 @@ from app.workers.tasks import ping
 from celery.result import AsyncResult
 from app.db.models import Lead, Message
 from app.db.session import get_async_session
+from sqlalchemy import or_
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[AdminAuth])
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @router.get("/leads")
@@ -36,10 +42,17 @@ async def list_leads(
             "name": lead.name,
             "event_type": lead.event_type,
             "event_date": lead.event_date.isoformat() if lead.event_date else None,
+            "venue_city": lead.venue_city,
             "budget_min": lead.budget_min,
             "budget_max": lead.budget_max,
+            "project_value_estimate": lead.project_value_estimate,
+            "owner": lead.owner,
+            "preferred_channel": lead.preferred_channel,
+            "urgency_level": lead.urgency_level,
             "status": lead.status,
             "stage": lead.stage,
+            "proposal_status": lead.proposal_status,
+            "handoff_required": lead.handoff_required,
             "followup_state": lead.followup_state,
             "last_message_at": lead.last_message_at.isoformat() if lead.last_message_at else None,
             "updated_at": lead.updated_at.isoformat(),
@@ -65,9 +78,18 @@ async def get_lead(
         "event_date": lead.event_date.isoformat() if lead.event_date else None,
         "event_date_text": lead.event_date_text,
         "guest_count": lead.guest_count,
+        "venue_city": lead.venue_city,
         "budget_min": lead.budget_min,
         "budget_max": lead.budget_max,
         "budget_currency": lead.budget_currency,
+        "project_value_estimate": lead.project_value_estimate,
+        "preferred_channel": lead.preferred_channel,
+        "urgency_level": lead.urgency_level,
+        "owner": lead.owner,
+        "proposal_status": lead.proposal_status,
+        "proposal_sent_at": lead.proposal_sent_at.isoformat() if lead.proposal_sent_at else None,
+        "handoff_required": lead.handoff_required,
+        "handoff_reason": lead.handoff_reason,
         "source": lead.source,
         "stage": lead.stage,
         "status": lead.status,
@@ -107,6 +129,256 @@ async def get_lead_messages(
         }
         for m in rows
     ]
+
+
+@router.get("/review-queue")
+async def review_queue(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict]:
+    limit = max(1, min(200, limit))
+    rows = (
+        (
+            await session.execute(
+                select(Lead)
+                .where(
+                    or_(
+                        Lead.handoff_required.is_(True),
+                        Lead.proposal_status == "requested",
+                        Lead.status == "reply_failed",
+                        Lead.status == "pending_handoff",
+                        Lead.status == "proposal_requested",
+                    )
+                )
+                .order_by(desc(Lead.updated_at))
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": str(lead.id),
+            "instagram_user_id": lead.instagram_user_id,
+            "instagram_username": lead.instagram_username,
+            "name": lead.name,
+            "event_type": lead.event_type,
+            "venue_city": lead.venue_city,
+            "guest_count": lead.guest_count,
+            "budget_min": lead.budget_min,
+            "budget_max": lead.budget_max,
+            "preferred_channel": lead.preferred_channel,
+            "urgency_level": lead.urgency_level,
+            "owner": lead.owner,
+            "status": lead.status,
+            "stage": lead.stage,
+            "proposal_status": lead.proposal_status,
+            "handoff_required": lead.handoff_required,
+            "handoff_reason": lead.handoff_reason,
+            "followup_state": lead.followup_state,
+            "last_message_at": lead.last_message_at.isoformat() if lead.last_message_at else None,
+            "updated_at": lead.updated_at.isoformat(),
+        }
+        for lead in rows
+    ]
+
+
+@router.post("/leads/{lead_id}/mark-handoff-handled")
+async def mark_handoff_handled(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    lead.handoff_required = False
+    lead.handoff_reason = None
+    if lead.status == "pending_handoff":
+        lead.status = "active"
+    await session.commit()
+    return {"ok": True, "lead_id": str(lead.id), "status": lead.status}
+
+
+@router.post("/leads/{lead_id}/mark-proposal-sent")
+async def mark_proposal_sent(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    lead.proposal_status = "sent"
+    lead.proposal_sent_at = _utcnow()
+    if lead.status == "proposal_requested":
+        lead.status = "awaiting_user"
+    await session.commit()
+    return {
+        "ok": True,
+        "lead_id": str(lead.id),
+        "proposal_status": lead.proposal_status,
+        "proposal_sent_at": lead.proposal_sent_at.isoformat() if lead.proposal_sent_at else None,
+    }
+
+
+@router.post("/leads/{lead_id}/mark-proposal-in-progress")
+async def mark_proposal_in_progress(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    lead.proposal_status = "in_progress"
+    if lead.status == "proposal_requested":
+        lead.status = "active"
+    await session.commit()
+    return {
+        "ok": True,
+        "lead_id": str(lead.id),
+        "proposal_status": lead.proposal_status,
+        "status": lead.status,
+    }
+
+
+@router.get("/leads/{lead_id}/sales-brief")
+async def get_sales_brief(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    recent_messages = (
+        (
+            await session.execute(
+                select(Message).where(Message.lead_id == lead_id).order_by(desc(Message.created_at)).limit(12)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    recent_messages = list(reversed(recent_messages))
+
+    summary = {
+        "lead_id": str(lead.id),
+        "name": lead.name,
+        "instagram_username": lead.instagram_username,
+        "event_type": lead.event_type,
+        "event_date": lead.event_date.isoformat() if lead.event_date else None,
+        "event_date_text": lead.event_date_text,
+        "guest_count": lead.guest_count,
+        "venue_city": lead.venue_city,
+        "budget_min": lead.budget_min,
+        "budget_max": lead.budget_max,
+        "budget_currency": lead.budget_currency,
+        "project_value_estimate": lead.project_value_estimate,
+        "preferred_channel": lead.preferred_channel,
+        "urgency_level": lead.urgency_level,
+        "proposal_status": lead.proposal_status,
+        "handoff_required": lead.handoff_required,
+        "handoff_reason": lead.handoff_reason,
+        "owner": lead.owner,
+        "status": lead.status,
+        "stage": lead.stage,
+    }
+
+    missing = []
+    for field, value in [
+        ("event_type", lead.event_type),
+        ("date", lead.event_date or lead.event_date_text),
+        ("guest_count", lead.guest_count),
+        ("venue_city", lead.venue_city),
+        ("budget", lead.budget_min or lead.budget_max),
+        ("name", lead.name),
+    ]:
+        if not value:
+            missing.append(field)
+
+    recommendation = "Continue qualification in DM."
+    if lead.handoff_required:
+        recommendation = "Human handoff recommended. Continue on WhatsApp or phone."
+    elif lead.proposal_status == "requested":
+        recommendation = "Prepare a tailored quote or proposal summary next."
+    elif lead.status == "reply_failed":
+        recommendation = "Reply delivery failed. Review channel setup before next outreach."
+
+    return {
+        "lead": summary,
+        "missing_fields": missing,
+        "recommended_next_step": recommendation,
+        "recent_messages": [
+            {
+                "direction": m.direction,
+                "text": m.text,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in recent_messages
+        ],
+    }
+
+
+@router.get("/leads/{lead_id}/operator-suggestions")
+async def get_operator_suggestions(
+    lead_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    event_label = lead.event_type or "event"
+    date_label = lead.event_date.isoformat() if lead.event_date else (lead.event_date_text or "your preferred date")
+    city_label = lead.venue_city or "the venue area"
+    guest_label = str(lead.guest_count) if lead.guest_count else "your guest count"
+    budget_label = _budget_label(lead)
+
+    handoff_message = (
+        f"Of course. I’d be happy to continue personally. "
+        f"If you send {city_label}, {date_label}, and {guest_label}, we can guide the next step quickly."
+    )
+    quote_message = (
+        f"Thank you. Based on the {event_label}, we can prepare a tailored starting direction. "
+        f"To shape it properly, we would confirm the city, guest count, and budget range first."
+    )
+    proposal_outline = [
+        f"Event type: {event_label}",
+        f"Date: {date_label}",
+        f"City / venue area: {city_label}",
+        f"Guest count: {guest_label}",
+        f"Budget signal: {budget_label}",
+        f"Urgency: {lead.urgency_level or 'medium'}",
+        f"Preferred channel: {lead.preferred_channel or 'instagram'}",
+    ]
+
+    next_action = "continue_dm"
+    if lead.handoff_required:
+        next_action = "handoff"
+    elif lead.proposal_status in {"requested", "in_progress"}:
+        next_action = "prepare_proposal"
+
+    return {
+        "next_action": next_action,
+        "handoff_message": handoff_message,
+        "quote_message": quote_message,
+        "proposal_outline": proposal_outline,
+    }
+
+
+def _budget_label(lead: Lead) -> str:
+    if lead.budget_min and lead.budget_max:
+        return f"{lead.budget_min}-{lead.budget_max} {lead.budget_currency or ''}".strip()
+    if lead.budget_max:
+        return f"up to {lead.budget_max} {lead.budget_currency or ''}".strip()
+    if lead.budget_min:
+        return f"from {lead.budget_min} {lead.budget_currency or ''}".strip()
+    if lead.project_value_estimate:
+        return f"estimated around {lead.project_value_estimate}"
+    return "not confirmed yet"
 
 
 @router.get("/debug/config")

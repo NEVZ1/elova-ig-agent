@@ -22,9 +22,17 @@ class Lead(Base):
     event_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
     event_date_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
     guest_count: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    venue_city: Mapped[str | None] = mapped_column(String(128), nullable=True)
     budget_min: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     budget_max: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     budget_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    project_value_estimate: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    preferred_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    urgency_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    proposal_status: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
+    handoff_required: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    handoff_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="instagram_dm")
 
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="greeting")
@@ -36,6 +44,7 @@ class Lead(Base):
     last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     followup_anchor_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    proposal_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

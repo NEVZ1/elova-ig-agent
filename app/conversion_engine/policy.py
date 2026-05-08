@@ -12,6 +12,8 @@ def missing_fields(lead: Lead) -> list[str]:
         missing.append("date")
     if not lead.guest_count:
         missing.append("guest_count")
+    if not lead.venue_city:
+        missing.append("venue_city")
     if not (lead.budget_min or lead.budget_max):
         missing.append("budget")
     if not lead.name:
@@ -23,9 +25,23 @@ class ConversionPolicy:
     def decide(self, lead: Lead, inbound_text: str) -> Decision:
         text = (inbound_text or "").lower()
         missing = missing_fields(lead)
+        handoff_words = [
+            "human", "person", "someone", "call me", "owner", "manager", "whatsapp", "phone", "number", "ara", "acil", "hemen"
+        ]
+        quote_words = [
+            "quote", "proposal", "package", "pricing", "price", "how much", "cost", "rates", "teklif", "fiyat"
+        ]
 
         if any(k in text for k in ["stop", "unsubscribe", "do not message", "dont message", "no more"]):
             return Decision(stage="followup", status="lost", goal="stop", missing_fields=missing)
+
+        if any(k in text for k in handoff_words):
+            return Decision(stage="conversion", status="active", goal="handoff", missing_fields=missing)
+
+        if any(k in text for k in quote_words):
+            stage = "qualification" if len(missing) > 2 else "conversion"
+            goal = "price_inquiry" if missing else "quote"
+            return Decision(stage=stage, status="active", goal=goal, missing_fields=missing)
 
         if any(k in text for k in ["price", "pricing", "how much", "cost", "rates"]):
             stage = "qualification" if missing else "positioning"
@@ -37,4 +53,3 @@ class ConversionPolicy:
         if missing:
             return Decision(stage="qualification", status="active", goal="qualify", missing_fields=missing)
         return Decision(stage="positioning", status="active", goal="position", missing_fields=missing)
-

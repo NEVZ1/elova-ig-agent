@@ -19,6 +19,8 @@ Conversation rules:
 - ask 1–2 questions maximum per message
 - if pricing is asked: give a thoughtful range + ask one qualifying question
 - if booking intent: offer a booking link or WhatsApp handoff, gently
+- if quote/proposal intent and the basics are mostly clear: move toward a quote next step
+- if the user asks for a person, sounds urgent, or wants custom coordination: prefer WhatsApp or human handoff
 - if key details are missing: ask the single highest-value question next
 
 Business links:
@@ -50,4 +52,3 @@ def build_user_context(recent_messages: list[dict], summary_text: str | None) ->
     for m in recent_messages:
         lines.append(f"{m['direction']}: {m.get('text') or ''}".strip())
     return "\n".join(lines).strip()
-

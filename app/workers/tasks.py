@@ -46,6 +46,7 @@ def process_incoming_dm(event: dict) -> dict:
     client = get_instagram_client()
     policy = ConversionPolicy()
     memory = MemoryService()
+    action_taken = "no_action"
     try:
         convo: ConversationEngine | None = ConversationEngine()
         extractor: LeadExtractor | None = None if settings.llm_unified_mode else LeadExtractor()
@@ -116,6 +117,9 @@ def process_incoming_dm(event: dict) -> dict:
                     missing_fields=decision.missing_fields,
                 )
                 _apply_lead_update_from_unified(lead, unified)
+                lead.stage = unified.stage or lead.stage
+                _apply_operational_signals(lead, inbound_text, decision.goal, unified.action)
+                action_taken = unified.action
                 _upsert_summary_from_unified(session, lead, summary, unified)
                 reply = unified.reply_text
             except Exception as exc:  # noqa: BLE001
@@ -132,13 +136,16 @@ def process_incoming_dm(event: dict) -> dict:
                 missing_fields=decision.missing_fields,
             )
             memory.upsert_summary(session, lead, recent_messages)
+            lead.stage = plan.stage or lead.stage
+            _apply_operational_signals(lead, inbound_text, decision.goal, plan.action)
+            action_taken = plan.action
             reply = plan.reply_text
         else:
             reply = _fallback_reply(decision.missing_fields, decision.goal)
 
         try:
             client.send_text_sync(OutboundMessage(recipient_id=instagram_user_id, text=reply))
-            lead.status = "awaiting_user"
+            lead.status = _next_status_after_reply(lead, action_taken)
             lead.last_outbound_at = now
             lead.last_message_at = now
             lead.followup_state = "none"
@@ -158,20 +165,38 @@ def process_incoming_dm(event: dict) -> dict:
             logger.info("dm_replied", instagram_user_id=instagram_user_id, lead_id=str(lead.id))
             return {"ok": True, "lead_id": str(lead.id)}
         except Exception as exc:  # noqa: BLE001
+            lead.status = "reply_failed"
+            lead.last_message_at = now
+            session.add(
+                Message(
+                    lead_id=lead.id,
+                    direction="system",
+                    channel="instagram",
+                    instagram_message_id=None,
+                    text="Outbound Instagram reply failed.",
+                    raw_payload={"type": "send_error", "error": str(exc)},
+                )
+            )
             session.commit()
-            logger.error("dm_reply_failed", instagram_user_id=instagram_user_id, err=str(exc))
+            logger.error("dm_reply_failed", instagram_user_id=instagram_user_id, lead_id=str(lead.id), err=str(exc))
             return {"ok": False, "lead_id": str(lead.id), "error": "send_failed"}
 
 
 def _fallback_reply(missing: list[str], goal: str) -> str:
+    if goal == "handoff":
+        return "Of course. WhatsApp works best for quick details, and I can have our team continue there."
+    if goal == "quote":
+        return "I can prepare a tailored starting direction. May I ask the city and guest count first?"
     if goal == "price_inquiry":
-        return "Pricing is tailored to venue and scope. May I ask the date?"
+        return "Pricing is tailored to venue and scope. May I ask the date first?"
     if goal == "convert":
         return "Of course. What date are you considering?"
     if "date" in missing:
         return "That sounds like a beautiful event. What date are you considering?"
     if "guest_count" in missing:
         return "Lovely. About how many guests?"
+    if "venue_city" in missing:
+        return "Lovely. Which city or area is the event in?"
     if "event_type" in missing:
         return "Lovely. What type of event is it?"
     if "budget" in missing:
@@ -187,9 +212,16 @@ def _apply_lead_update_from_extractor(lead: Lead, extractor: LeadExtractor, rece
             "event_date": lead.event_date.isoformat() if lead.event_date else None,
             "event_date_text": lead.event_date_text,
             "guest_count": lead.guest_count,
+            "venue_city": lead.venue_city,
             "budget_min": lead.budget_min,
             "budget_max": lead.budget_max,
             "budget_currency": lead.budget_currency,
+            "project_value_estimate": lead.project_value_estimate,
+            "preferred_channel": lead.preferred_channel,
+            "urgency_level": lead.urgency_level,
+            "handoff_required": lead.handoff_required,
+            "handoff_reason": lead.handoff_reason,
+            "proposal_status": lead.proposal_status,
             "source": lead.source,
         }
         update = extractor.extract(recent_messages=recent_messages, known=known)
@@ -203,12 +235,26 @@ def _apply_lead_update_from_extractor(lead: Lead, extractor: LeadExtractor, rece
             lead.event_date_text = lead.event_date_text or update.event_date_text
         if update.guest_count:
             lead.guest_count = lead.guest_count or update.guest_count
+        if update.venue_city:
+            lead.venue_city = lead.venue_city or update.venue_city
         if update.budget_min is not None:
             lead.budget_min = lead.budget_min or update.budget_min
         if update.budget_max is not None:
             lead.budget_max = lead.budget_max or update.budget_max
         if update.budget_currency:
             lead.budget_currency = lead.budget_currency or update.budget_currency
+        if update.project_value_estimate is not None:
+            lead.project_value_estimate = lead.project_value_estimate or update.project_value_estimate
+        if update.preferred_channel:
+            lead.preferred_channel = lead.preferred_channel or update.preferred_channel
+        if update.urgency_level:
+            lead.urgency_level = lead.urgency_level or update.urgency_level
+        if update.handoff_required is not None:
+            lead.handoff_required = lead.handoff_required or update.handoff_required
+        if update.handoff_reason:
+            lead.handoff_reason = lead.handoff_reason or update.handoff_reason
+        if update.proposal_status:
+            lead.proposal_status = update.proposal_status if lead.proposal_status == "none" else lead.proposal_status
         if update.source:
             lead.source = update.source
     except Exception as exc:  # noqa: BLE001
@@ -226,12 +272,87 @@ def _apply_lead_update_from_unified(lead: Lead, unified) -> None:  # noqa: ANN00
         lead.event_date_text = lead.event_date_text or unified.event_date_text
     if unified.guest_count:
         lead.guest_count = lead.guest_count or unified.guest_count
+    if unified.venue_city:
+        lead.venue_city = lead.venue_city or unified.venue_city
     if unified.budget_min is not None:
         lead.budget_min = lead.budget_min or unified.budget_min
     if unified.budget_max is not None:
         lead.budget_max = lead.budget_max or unified.budget_max
     if unified.budget_currency:
         lead.budget_currency = lead.budget_currency or unified.budget_currency
+    if unified.project_value_estimate is not None:
+        lead.project_value_estimate = lead.project_value_estimate or unified.project_value_estimate
+    if unified.preferred_channel:
+        lead.preferred_channel = lead.preferred_channel or unified.preferred_channel
+    if unified.urgency_level:
+        lead.urgency_level = lead.urgency_level or unified.urgency_level
+    if unified.handoff_required is not None:
+        lead.handoff_required = lead.handoff_required or unified.handoff_required
+    if unified.handoff_reason:
+        lead.handoff_reason = lead.handoff_reason or unified.handoff_reason
+    if unified.proposal_status:
+        lead.proposal_status = unified.proposal_status if lead.proposal_status == "none" else lead.proposal_status
+
+
+def _apply_operational_signals(lead: Lead, inbound_text: str, goal: str, action: str) -> None:
+    text = (inbound_text or "").lower()
+    if any(k in text for k in ["whatsapp", "phone", "call me", "ara", "numara"]):
+        lead.preferred_channel = lead.preferred_channel or "whatsapp"
+    elif any(k in text for k in ["book", "booking", "consultation", "consult"]):
+        lead.preferred_channel = lead.preferred_channel or "booking"
+
+    if any(k in text for k in ["urgent", "asap", "today", "tomorrow", "acil", "hemen"]):
+        lead.urgency_level = lead.urgency_level or "high"
+    elif not lead.urgency_level:
+        lead.urgency_level = "medium"
+
+    if goal in {"handoff", "quote"} or action in {"human_handoff", "request_quote"}:
+        if lead.proposal_status == "none" and goal == "quote":
+            lead.proposal_status = "requested"
+        if goal == "handoff" or action == "human_handoff":
+            lead.handoff_required = True
+            lead.handoff_reason = lead.handoff_reason or "Explicit request for human support."
+            lead.owner = lead.owner or "sales_queue"
+
+    if not lead.owner and _is_priority_lead(lead):
+        lead.owner = "priority_queue"
+
+    if lead.project_value_estimate is None:
+        lead.project_value_estimate = _estimate_project_value(lead)
+
+
+def _next_status_after_reply(lead: Lead, action: str) -> str:
+    if lead.handoff_required or action == "human_handoff":
+        return "pending_handoff"
+    if lead.proposal_status == "requested" or action == "request_quote":
+        return "proposal_requested"
+    return "awaiting_user"
+
+
+def _is_priority_lead(lead: Lead) -> bool:
+    if lead.urgency_level == "high":
+        return True
+    if (lead.budget_max or 0) >= 150000:
+        return True
+    if (lead.guest_count or 0) >= 120:
+        return True
+    return False
+
+
+def _estimate_project_value(lead: Lead) -> int | None:
+    if lead.budget_max:
+        return lead.budget_max
+    if lead.budget_min:
+        return lead.budget_min
+    if lead.guest_count:
+        if lead.guest_count >= 150:
+            return 200000
+        if lead.guest_count >= 80:
+            return 120000
+        if lead.guest_count >= 40:
+            return 70000
+        return 40000
+    return None
 
 
 def _upsert_summary_from_unified(session, lead: Lead, existing, unified) -> None:  # noqa: ANN001
